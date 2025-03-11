@@ -1,0 +1,5 @@
+defaultProject: adswerve-finance-reporting
+defaultLocation: US
+defaultDataset: Fin_Reports
+defaultAssertionDataset: dataform_assertions
+dataformCoreVersion: 3.0.0
