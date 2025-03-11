@@ -17,4 +17,4 @@ WHERE
 )
 
 
-SELECT * FROM Projects
+SELECT * FROM Projects limit 100
