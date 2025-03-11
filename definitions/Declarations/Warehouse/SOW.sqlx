@@ -1,0 +1,10 @@
+config {
+  type: "declaration",
+  database: "adswerve-sfdc",
+  schema: "Warehouse",
+  name: "sow"
+}
+
+
+
+--adswerve-sfdc.Warehouse.sow

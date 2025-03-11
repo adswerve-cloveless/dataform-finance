@@ -1,0 +1,9 @@
+config {
+  type: "declaration",
+  database: "adswerve-finance",
+  schema: "Fin_DataSources",
+  name: "ProductFamilyClassMap"
+}
+
+
+--`adswerve-finance.Fin_DataSources.ProductFamilyClassMap`
