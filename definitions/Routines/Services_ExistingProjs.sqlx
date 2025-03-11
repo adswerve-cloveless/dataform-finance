@@ -1,3 +1,12 @@
+config {
+  type: "operations",
+  database: "adswerve-finance",
+  schema: "Fcst_Tool",
+  name: "Services_ExistingProjs"
+}
+
+
+
 -- CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.Services_ExistingProjects_v2`()
 -- OPTIONS (strict_mode=false)
 -- BEGIN
@@ -11,7 +20,7 @@ CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.Services_ExistingProje
 WITH Projects AS (
 SELECT 
   * 
-FROM `adswerve-finance.Warehouse.Project` P
+FROM ${ref("Project")} P
 WHERE
  P.Internal_ID NOT IN ("7710","9532","9008","9552")
  AND Status <> "xExclude"  --added 11/6/2024
@@ -22,7 +31,7 @@ SELECT
   DISTINCT
   ProjectId
   ,Class
-FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders` 
+FROM ${ref("NS_Sales_Orders")}
 WHERE
   ProjectId IS NOT NULL
   AND Class IS NOT NULL

@@ -1,0 +1,6 @@
+config {
+  type: "declaration",
+  database: "adswerve-finance",
+  schema: "Fin_Stage",
+  name: "NS_Sales_Orders"
+}
