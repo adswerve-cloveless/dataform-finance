@@ -1,12 +1,9 @@
 config {
   type: "declaration",
   database: "adswerve-finance",
-  schema: "Fin_Stage",
-  name: "Manual_CommissionsServiceMap"
+  schema: "Fin_DataSources",
+  name: "Revenue_DataDump"
 }
-
-
-
 
 
 
