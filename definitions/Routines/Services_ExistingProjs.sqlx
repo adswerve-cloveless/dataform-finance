@@ -1,0 +1,298 @@
+-- CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.Services_ExistingProjects_v2`()
+-- OPTIONS (strict_mode=false)
+-- BEGIN
+
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.Services_ExistingProjects_v2` AS
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+/* Projects in NS - Start */
+-------------------------------------------------------------------------------------------------------------------------------------------------
+WITH Projects AS (
+SELECT 
+  * 
+FROM `adswerve-finance.Warehouse.Project` P
+WHERE
+ P.Internal_ID NOT IN ("7710","9532","9008","9552")
+ AND Status <> "xExclude"  --added 11/6/2024
+)
+
+,ClassDetail AS(
+SELECT 
+  DISTINCT
+  ProjectId
+  ,Class
+FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders` 
+WHERE
+  ProjectId IS NOT NULL
+  AND Class IS NOT NULL
+  AND Item <> "Admin Fee"
+)
+
+
+,NS_Opps AS (
+SELECT 
+  P.Internal_ID AS NS_Project_ID
+  ,P.customer_internal_id AS NS_Customer_ID /*Customer LVL NOT Parent LVL*/
+  ,P.harvest_id AS NS_Harvest_ID
+  -- ,P.name
+  ,C.company_name AS Parent_Name
+  ,P.project_name
+  ,S.Product__c
+  ,O.Class
+  ,S.Contract_Type__c
+
+  ,CAST(P.start AS DATE) AS NS_StartDt
+  ,CAST(S.Start_Date__c AS DATE) AS SF_StartDt
+  
+  ,IF(P.project_end="",CAST(P.scheduled_end AS DATE),PARSE_DATE('%m/%d/%Y', P.project_end) )  AS NS_EndDt
+  ,CAST(S.End_Date__c AS DATE) AS SF_EndDt
+  
+  ,CASE 
+    WHEN S.Start_Date__c IS NULL THEN CAST(P.start AS DATE) 
+    ELSE IF(CAST(PARSE_DATETIME('%Y-%m-%d %H:%M', P.modified ) AS DATE) > CAST(S.LastModifiedDate AS DATE) 
+              ,CAST(P.start AS DATE)
+              , CAST(S.Start_Date__c AS DATE))
+   END AS Infer_StartDt
+  
+  ,IFNULL(Estimated_Completion_Date__c,
+    CASE
+      WHEN CAST(S.End_Date__c AS DATE) IS NULL THEN IF(P.project_end="",CAST(P.scheduled_end AS DATE),PARSE_DATE('%m/%d/%Y', P.project_end) )
+      ELSE IF(CAST(PARSE_DATETIME('%Y-%m-%d %H:%M', P.modified ) AS DATE) > CAST(S.LastModifiedDate AS DATE) 
+                ,IF(P.project_end="",CAST(P.scheduled_end AS DATE),PARSE_DATE('%m/%d/%Y', P.project_end) )
+                , CAST(S.End_Date__c AS DATE))
+      END) AS Infer_EndDt
+
+  ,CAST(S.LastModifiedDate AS DATE) AS SF_LastModifiedDt
+  ,CAST(PARSE_DATETIME('%Y-%m-%d %H:%M', P.modified ) AS DATE) AS NS_LastModifiedDt
+ 
+---Housr Worked--------------------
+  ,P.work
+  ,P.calc_work
+-----------------------------------
+  ,P.planned_work
+  
+  -- ,P.estimated_gross
+  ,P.budget_amount
+  ,P.estimated_labo_revenue
+  ,P.estimated_labor
+  ,P.estimated_profit
+  ,P.estimated_profit_percent
+  -- ,P.project_baseline
+  ,P.remaining
+  -- ,IFNULL(CAST(S.Contract_Rate__c AS NUMERIC),
+  --     ROUND(SAFE_DIVIDE(
+              
+  --                 IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
+  --                     ,IFNULL(S.Contract_Value__c, 0) 
+  --                     ,CAST(P.estimated_labo_revenue AS NUMERIC))
+  --                 ,CAST(P.planned_work AS NUMERIC)
+  --             )
+  --           ,2)
+  --   ) AS Contract_Rate__c
+  ,IF(P.Project_Type ="Retainer" OR P.Project_Type ="Rete Card", CAST(S.Contract_Rate__c AS FLOAT64), 
+   ROUND(SAFE_DIVIDE(        
+            IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
+                  ,IFNULL(S.Contract_Value__c, 0) 
+                  ,CAST(P.estimated_labo_revenue AS NUMERIC))
+              ,CAST(P.planned_work AS NUMERIC)
+              )
+            ,2)) AS Contract_Rate__c
+  -- ,S.Contract_Value__c
+   ------------------------------------------------------------------------------
+  /* 7.22.2024 Changed to make NS primary and SF secondary. Originally SF was primary*/
+  -- ,IF(S.Contract_Value__c IS NULL OR S.Contract_Value__c = 0
+  --     ,CAST(IF(P.estimated_labo_revenue ="","0",P.estimated_labo_revenue) AS NUMERIC)
+  --     ,S.Contract_Value__c)  AS Contract_Value__c
+
+
+  ,IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
+      ,IFNULL(S.Contract_Value__c, 0) 
+      ,CAST(P.estimated_labo_revenue AS NUMERIC))  AS Contract_Value__c
+  ------------------------------------------------------------------------------
+
+  ,C.google_funded
+  ,C.account_category AS MRK_Vs_AGY
+  ,P.Project_Type  
+  ,P.Inactive
+  ,P.Currency
+  ,"F" AS IN_SF_NotInNS
+  ,CAST(S.Contract_Rate__c AS FLOAT64) AS AuditContractRate --AuditContractValue (Changed to improve overlay)
+FROM Projects P
+LEFT JOIN `adswerve-sfdc.Warehouse.sow` S ON P.harvest_id = S.Harvest_Project_Id__c
+LEFT JOIN ClassDetail O ON P.Internal_ID = O.ProjectId
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON P.customer_internal_id = C.internal_id
+WHERE
+  NOT REGEXP_CONTAINS(P.Project_Type,"Internal")
+--   EXTRACT(YEAR FROM CAST(P.end_date AS DATE) ) >= 2024
+
+ORDER BY
+  P.Internal_ID
+  ,O.Class
+)
+-------------------------------------------------------------------------------------------------------------------------------------------------
+/* Projects in NS - END */
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+/* Projects in SF, but not in NS - Start */
+-------------------------------------------------------------------------------------------------------------------------------------------------
+,NS_Data AS(
+SELECT 
+  DISTINCT
+  OpportunityId
+FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders`
+WHERE 
+  OpportunityId IS NOT NULL
+)
+
+
+,SF_OppData AS(
+SELECT  
+  Opportunity_Safe_ID__c AS SF_OpportunityID
+  -- ,N.OpportunityId
+  ,O.AccountID
+  ,A.celigo_sfnsio__NetSuite_Id__c 
+  ,O.Name
+  ,O.Current_Pipeline_Stage__c
+  ,O.Product_Combine__c
+  ,O.Product_Family__c
+  ,O.Service__c
+  -- ,Pipeline__c
+  ,O.StageName
+  ,O.Type
+  ,O.Account_Client_Type__c
+  ,IF(O.RecordTypeId = "0124M000000XA5MQAW",TRUE,FALSE) AS Renewal
+  ,CAST(O.Opportunity_Value__c AS FLOAT64) AS Opportunity_Value__c
+  ,O.Amount
+  ,CAST(O.Calculated_Gross_Value__c AS FLOAT64) AS Calculated_Gross_Value__c -- GoogleGrossValue
+  ,CAST(O.Opportunity_Value_Net__c AS FLOAT64) AS Opportunity_Value_Net__c -- AdswerveGrossValue
+  ,CAST(O.CloseDate AS DATE) AS CloseDate
+  ,CAST(O.CreatedDate__c AS DATE) AS CreatedDate__c
+  ,CAST(O.LastModifiedDate AS DATE) AS LastModifiedDate
+  ,CAST(O.Contract_Start_Date__c AS DATE) AS Contract_Start_Date__c
+  ,CAST(O.Contract_End_Date__c AS DATE) AS Contract_End_Date__c
+  ,Opportunity_Description__c
+  ,O.Google_Funded__c
+  
+FROM `adswerve-sfdc.Warehouse.opportunity` O
+LEFT JOIN NS_Data N ON O.Opportunity_Safe_ID__c = N.OpportunityId
+LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+WHERE
+  O.StageName = "Closed Won"
+  AND N.OpportunityId IS NULL
+  AND CloseDate >= "2024-01-01"
+  AND M.ServiceMapping IN ("Services")
+)
+
+,SF_OppData_Formatted AS(
+SELECT
+  /*1*/SF_OpportunityID AS NS_Project_ID
+  ,/*2*/O.celigo_sfnsio__NetSuite_Id__c AS NS_Customer_ID
+  ,/*3*/CAST(NULL AS STRING) AS NS_Harvest_ID -- Will Always be NULL
+  ,/*4*/C.parent AS Parent_Name
+  ,/*5*/ /*Opportunity_Description__c*/ O.name AS project_name
+  ,/*6*/CAST(NULL AS STRING) AS Product__c
+  ,/*7*/M.Class AS Class
+  ,/*8*/O.Service__c AS Contract_Type__c
+  ,/*9*/CAST(NULL AS DATE) AS NS_StartDt -- Will Always be NULL
+  ,/*10*/DATE_ADD(O.CloseDate, INTERVAL 30 DAY) AS SF_StartDt -- Close Dat + 30 days
+  ,/*11*/CAST(NULL AS DATE) AS NS_EndDt -- Will Always be NULL
+  ,/*12*/DATE_ADD(DATE_ADD(O.CloseDate, INTERVAL 30 DAY),INTERVAL 1 YEAR) AS SF_EndDt --Close Dat + 30 days + 1Year
+  
+  ,/*13*/DATE_ADD(O.CloseDate, INTERVAL 30 DAY) AS Infer_StartDt
+  ,/*14*/DATE_ADD(DATE_ADD(O.CloseDate, INTERVAL 30 DAY),INTERVAL 1 YEAR) AS Infer_EndDt
+
+  ,/*15*/CAST(NULL AS DATE) AS SF_LastModifiedDt -- Will Always be NULL
+  ,/*16*/CAST(NULL AS DATE) AS NS_LastModifiedDt -- Will Always be NULL
+  ,/*17*/CAST(NULL AS STRING) AS work -- Will Always be NULL
+  ,/*18*/CAST(NULL AS STRING) AS calc_work -- Will Always be NULL
+  ,/*19*/CAST(NULL AS STRING) AS planned_work -- Will Always be NULL
+  ,/*20*/CAST(NULL AS STRING) AS budget_amount -- Will Always be NULL
+  ,/*21*/CAST(NULL AS STRING) AS estimated_labo_revenue -- Will Always be NULL
+  ,/*22*/CAST(NULL AS STRING) AS estimated_labor -- Will Always be NULL
+  ,/*23*/CAST(NULL AS STRING) AS estimated_profit -- Will Always be NULL
+  ,/*24*/CAST(NULL AS STRING) AS estimated_profit_percent -- Will Always be NULL
+  
+  -- ,/*25*/CAST(SUM(`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)) AS STRING) AS remaining -- 100%
+  ,/*25*/CAST(
+    SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
+    ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)
+    ,O.Opportunity_Value_Net__c)) AS STRING) AS remaining ---Upadted 1/4/2025
+
+                                         
+
+  ,/*26*/NULL AS Contract_Rate__c  --NUll For now, could possibly use Estmated hours/inferred contract value
+  
+  -- ,/*27*/SUM(`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)) AS Contract_Value__c
+  ,/*27*/SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
+    ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)
+    ,O.Opportunity_Value_Net__c)) AS Contract_Value__c ---Upadted 1/4/2025
+
+
+
+  ,/*28*/CASE 
+          WHEN O.Google_Funded__c IS NULL THEN "F"
+          WHEN O.Google_Funded__c = "No" THEN "F"
+          WHEN O.Google_Funded__c IN ("Fully","Partially") THEN "T"
+          ELSE "Error"
+        END AS google_funded 
+  ,/*29*/C.account_category AS MRK_Vs_AGY -- get from customer table 
+  -- ,/*30*/O.Service__c AS Project_Type  -- same as contract type
+  ,/*30*/
+    CASE
+      WHEN REGEXP_CONTAINS(O.Service__c,"Retainer") THEN "Retainer"
+      WHEN REGEXP_CONTAINS(O.Service__c,"Block Hours") THEN "Block Hours"
+      WHEN REGEXP_CONTAINS(O.Service__c,"Rate Card") THEN "Rate Card"
+      ELSE "Fixed Bid"
+    END AS Project_Type
+  ,/*31*/CAST(NULL AS STRING) AS Inactive -- Will Always be NULL
+  ,/*32*/CAST(NULL AS STRING) AS Currency -- Will Always be NULL
+  ,/*33*/"T" AS IN_SF_NotInNS
+  ,/*33*/CAST(NULL AS NUMERIC) AS AuditContractValue
+FROM SF_OppData O
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON O.celigo_sfnsio__NetSuite_Id__c = C.Internal_ID
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` M ON O.Product_Family__c = M.Product_Family
+WHERE
+ SF_OpportunityID <> "006Rp00000DyakIIAR"
+GROUP BY ALL
+)
+
+,Consolidated AS (
+SELECT * FROM NS_Opps
+-- WHERE
+--   Currency ="US Dollar"
+UNION ALL
+SELECT * FROM SF_OppData_Formatted
+)
+
+
+SELECT
+  C.*
+  ,CASE
+    WHEN IN_SF_NotInNS = "F" THEN
+      CASE 
+        -- WHEN Class = "" OR Class IS NULL THEN "Unknown"
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Media") THEN "Product : Media" /*Media*/
+        ELSE ""
+      END
+    WHEN  IN_SF_NotInNS = "T" THEN Class
+      -- CASE 
+        -- WHEN Class = "" OR Class IS NULL THEN "Unknown"
+      --   ELSE Class
+      -- END
+  END AS Fcst_Class
+FROM Consolidated C
+WHERE
+  NOT 
+  (
+    REGEXP_CONTAINS(project_name,"3PCD")
+    AND IN_SF_NotInNS = "T"
+  )
+
+-- ;END;
