@@ -1,0 +1,12 @@
+config {
+  type: "declaration",
+  database: "adswerve-finance",
+  schema: "WarehFin_Stageouse",
+  name: "Manual_CommissionsServiceMap`"
+}
+
+
+
+
+
+

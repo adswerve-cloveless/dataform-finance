@@ -11,7 +11,7 @@ config {
 -- OPTIONS (strict_mode=false)
 -- BEGIN
 
-CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.Services_ExistingProjects_v2` AS
+-- CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.Services_ExistingProjects_v2` AS
 
 
 -------------------------------------------------------------------------------------------------------------------------------------------------
@@ -150,7 +150,7 @@ ORDER BY
 SELECT 
   DISTINCT
   OpportunityId
-FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders`
+FROM ${ref("NS_Sales_Orders")}
 WHERE 
   OpportunityId IS NOT NULL
 )
@@ -184,10 +184,10 @@ SELECT
   ,Opportunity_Description__c
   ,O.Google_Funded__c
   
-FROM `adswerve-sfdc.Warehouse.opportunity` O
+FROM ${ref("NS_Sales_Orders")} O
 LEFT JOIN NS_Data N ON O.Opportunity_Safe_ID__c = N.OpportunityId
 LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
-LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+LEFT JOIN ${ref("account")} A ON O.AccountID = A.Account_Case_Safe_ID__c
 WHERE
   O.StageName = "Closed Won"
   AND N.OpportunityId IS NULL

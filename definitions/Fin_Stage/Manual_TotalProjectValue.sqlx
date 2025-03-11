@@ -1,0 +1,8 @@
+config {
+  type: "declaration",
+  database: "adswerve-finance",
+  schema: "Fin_Stage",
+  name: "Manual_TotalProjectValue"
+}
+
+
