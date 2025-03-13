@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_DataSourced",
+  name: "TotalProjectValue"
+}
+
+
+
+
+
+
+
+
+WITH project AS (
+  SELECT
+    internal_id,
+    CAST(IF(estimated_labo_revenue = "", "0", estimated_labo_revenue) AS NUMERIC) AS estimated_labo_revenue,
+    project_type
+  FROM  ${ref("Project")}  --`adswerve-finance.Warehouse.Project`
+)
+
+SELECT
+  project_id,
+  SUM(IF(project_type = 'Rate Card', 0, IF(estimated_labo_revenue*2=total_value, estimated_labo_revenue,total_value))) as total_value
+FROM  ${ref("Manual_TotalProjectValue")} --`adswerve-finance.Fin_Stage.Manual_TotalProjectValue`
+LEFT JOIN project
+ON internal_id = project_id
+GROUP BY ALL

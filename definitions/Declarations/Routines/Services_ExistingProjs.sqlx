@@ -316,7 +316,7 @@ FROM Prj_Final P
 LEFT JOIN  ${ref("sow")} /*`adswerve-sfdc.Warehouse.sow`*/ S ON P.harvest_id = S.Harvest_Project_Id__c
 LEFT JOIN ClassDetail O ON P.Internal_ID = O.ProjectId
 LEFT JOIN ${ref("Customer")} C ON P.customer_internal_id = C.internal_id
-LEFT JOIN ${ref("Manual_TotalProjectValue")} V ON P.Internal_ID = V.Project_ID
+LEFT JOIN ${ref("TotalProjectValue")} V ON P.Internal_ID = V.Project_ID
 WHERE
   NOT REGEXP_CONTAINS(P.Project_Type,"Internal")
 --   EXTRACT(YEAR FROM CAST(P.end_date AS DATE) ) >= 2024
@@ -413,12 +413,9 @@ SELECT
   ,/*24*/CAST(NULL AS STRING) AS estimated_profit_percent -- Will Always be NULL
   
   -- ,/*25*/CAST(SUM(`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)) AS STRING) AS remaining -- 100%
-  ,/*25*/CAST(
-    SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
+  ,/*25*/CAST(SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
     ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)
     ,O.Opportunity_Value_Net__c)) AS STRING) AS remaining ---Upadted 1/4/2025
-
-                                         
 
   ,/*26*/NULL AS Contract_Rate__c  --NUll For now, could possibly use Estmated hours/inferred contract value
   
@@ -512,16 +509,7 @@ SELECT
   ,"F" AS Inactive
   ,CAST(NULL AS STRING) AS Currency
   , "F" AS IN_SF_NotInNS
-  -- ,CAST(NULL AS NUMERIC) AS AuditContractValue
-  -- ,"" AS I
-  -- ,CASE 
-  --     WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
-  --     WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
-  --     WHEN REGEXP_CONTAINS(R.Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
-  --     WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
-  --     WHEN REGEXP_CONTAINS(R.Class,"Product : Media") THEN "Product : Media" /*Media*/
-  --     ELSE "Error"
-  --   END AS Fcst_Class
+
 FROM ${ref("Revenue_DataDump")} /*`adswerve-finance.Fin_DataSources.Revenue_DataDump`*/ R
 LEFT JOIN ${ref("Customer")} /*`adswerve-finance.Warehouse.Customer`*/ C ON R.Customer_ID = C.internal_id
 WHERE
@@ -644,7 +632,7 @@ SELECT
       ELSE "Error"
     END
   ) AS Fcst_Class
-FROM `adswerve-finance.Fin_DataSources.Services_ExistingProjects` P
+FROM BASE_1   --`adswerve-finance.Fin_DataSources.Services_ExistingProjects` P
 LEFT JOIN ${ref("Manual_ExistingSrvcs_Adj")} /*`adswerve-finance.Fin_Stage.Manual_ExistingSrvcs_Adj`*/ A ON P.NS_Project_ID = A.NS_Project_ID
 WHERE
   (
@@ -657,10 +645,9 @@ WHERE
 )
 
 -- -- --------------------------------------------------------------
--- SELECT 
---   B.* 
---   ,V.total_value AS ContractVal2
--- FROM Base_2 B
+SELECT 
+  B.* 
+FROM Base_2 B
 -- -- --------------------------------------------------------------
 
 -- ,Hours AS (
