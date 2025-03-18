@@ -1,0 +1,51 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fcst_Module",
+  name: "CommAndDV360_Actuals"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.CommAndDV360_Actuals`(PY_START DATE, Rpt_Period DATE)
+BEGIN
+
+
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.CommAndDV360_Actuals` AS 
+
+
+SELECT 
+  Period
+  ,CASE
+    WHEN REGEXP_CONTAINS(Account,"41117") THEN "41117-DV360"
+    WHEN REGEXP_CONTAINS(Account,"43175") THEN "43175-Commission"
+    ELSE "Error"
+   END AS NS_Project_ID
+  ,R.Customer_ID AS NS_Customer_ID
+  ,R.Customer_Nm
+  ,R.Class
+  ,"F"  AS G_Funded
+  ,IF(REGEXP_CONTAINS(AgencyOrMarketer,"Marketer"),"Direct Marketer",AgencyOrMarketer) AS MRK_Vs_AGY
+  ,CASE
+    WHEN REGEXP_CONTAINS(Account,"41117") THEN "DV360"
+    WHEN REGEXP_CONTAINS(Account,"43175") THEN "Commissions"
+    ELSE "Error"
+   END AS Project_Type
+  ,"F" AS Inactive
+  ,CASE 
+      WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
+      WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
+      WHEN REGEXP_CONTAINS(R.Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
+      WHEN REGEXP_CONTAINS(R.Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
+      WHEN REGEXP_CONTAINS(R.Class,"Product : Media") THEN "Product : Media" /*Media*/
+      ELSE "Error"
+    END AS Fcst_Class
+  ,SUM(Amount_Gross) AS Amount_Gross
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
+WHERE
+  REGEXP_CONTAINS(R.Account,"41117|43175")
+  AND Period >= PY_START
+  AND Period <= Rpt_Period
+GROUP BY ALL
+
+
+;END;

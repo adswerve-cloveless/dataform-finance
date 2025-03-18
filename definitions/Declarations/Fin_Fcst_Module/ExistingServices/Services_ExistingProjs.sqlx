@@ -1,7 +1,7 @@
 config {
   type: "operations",
-  database: "adswerve-finance",
-  schema: "Fcst_Tool",
+  database: "adswerve-finance-reporting",
+  schema: "Fcst_Module",
   name: "Services_ExistingProjs"
 }
 
