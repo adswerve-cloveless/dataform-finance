@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "NewBizOverrides"
+}
+
+
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingServicesOverride` --Update as needed
+(
+   
+  
+NS_Project_ID		STRING	
+,Contract_Value		FLOAT64	
+,Infer_StartDt		DATE	
+,Infer_EndDt		DATE	
+,Class		STRING	
+,Project_Type		STRING	
+,Notes		STRING	
+
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1grwgGtomD70eWyWD1AFbyPRe0mbpzNNgfMjld8vvghQ'] --Update as needed
+  ,sheet_range = 'Overrides'  --Update as needed
+  ,skip_leading_rows = 1
+  --,header = 0
+)
