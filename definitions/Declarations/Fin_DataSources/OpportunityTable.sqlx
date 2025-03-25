@@ -1,0 +1,9 @@
+config {
+  type: "table",
+  database: "adswerve-finance",
+  schema: "Fin_DataSources",
+  name: "Opportunities"
+}
+
+
+SELECT * FROM ${Tables.Opportuity_TBL}
