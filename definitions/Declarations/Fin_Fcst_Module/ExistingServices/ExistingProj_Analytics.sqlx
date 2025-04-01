@@ -39,8 +39,8 @@ SET SQL1 = CONCAT(
               ,G_Funded
               ,MRK_Vs_AGY
               ,Project_Type
-              ,PARSE_DATE('%e/%m/%Y', Infer_StartDt) AS Infer_StartDt
-              ,PARSE_DATE('%e/%m/%Y', Infer_EndDt) AS Infer_EndDt
+              ,PARSE_DATE('%m/%d/%Y', Infer_StartDt) AS Infer_StartDt
+              ,PARSE_DATE('%m/%d/%Y', Infer_EndDt) AS Infer_EndDt
               ,Contract_Rate
               ,Contract_Val
               ,RevToDate
