@@ -47,12 +47,12 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,NY_Apr  FLOAT64 
     ,NY_May  FLOAT64 
     ,NY_Jun  FLOAT64 
-    -- ,NY_Jul  FLOAT64 
-    -- ,NY_Aug  FLOAT64 
-    -- ,NY_Sep  FLOAT64 
-    -- ,NY_Oct  FLOAT64 
-    -- ,NY_Nov  FLOAT64 
-    -- ,NY_Dec  FLOAT64 
+    ,NY_Jul  FLOAT64 
+    ,NY_Aug  FLOAT64 
+    ,NY_Sep  FLOAT64 
+    ,NY_Oct  FLOAT64 
+    ,NY_Nov  FLOAT64 
+    ,NY_Dec  FLOAT64 
 
 	
 
