@@ -1,0 +1,36 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fcst_Module",
+  name: "ExistingProjs_Analytics"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fcst_Module.ExistingProjs_Analytics()
+BEGIN
+
+
+
+DECLARE SQL1 STRING;
+DECLARE Table_Nm STRING;
+
+
+SET Table_Nm = CONCAT(
+                      "adswerve-finance-reporting.Fcst_Module.ExistingProjs_Analytics_"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+
+
+
+
+SET SQL1 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              NewBizP1_Net,
+              " COPY `adswerve-finance.Fin_DataSources.NewBizProjectsP1_Net`;");
+
+
+
+
+
+
+
+END;
