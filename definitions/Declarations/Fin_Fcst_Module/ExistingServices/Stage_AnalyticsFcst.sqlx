@@ -21,8 +21,8 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,G_Funded STRING
     ,MRK_Vs_AGY STRING
     ,Project_Type STRING
-    ,Infer_StartDt DATE
-    ,Infer_EndDt DATE
+    ,Infer_StartDt STRING
+    ,Infer_EndDt STRING
     ,Contract_Rate FLOAT64
     ,Contract_Val  FLOAT64
     ,RevToDate STRING
