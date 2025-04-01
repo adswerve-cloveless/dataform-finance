@@ -1,0 +1,67 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "Stage_Media"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Media` 
+(
+    Customer_Nm STRING
+    ,Harvest_Nm STRING
+    ,Harvest_ID STRING
+    ,Project_ID STRING
+    ,Analytics_Director STRING
+    ,Analytics_Manager STRING
+    ,Consultants STRING
+    ,Acct_Owner STRING
+    ,Inactive STRING
+    ,Product__c STRING
+    ,G_Funded STRING
+    ,MRK_Vs_AGY STRING
+    ,Project_Type STRING
+    ,Infer_StartDt DATE
+    ,Infer_EndDt DATE
+    ,Contract_Rate FLOAT64
+    ,Contract_Val  FLOAT64
+    ,RevToDate STRING
+    ,Total_Overages  FLOAT64
+    ,Def_Balance  FLOAT64
+    ,Fcst_Var  FLOAT64 
+    ,CY_Jan  FLOAT64 
+    ,CY_Feb  FLOAT64 
+    ,CY_Mar  FLOAT64 
+    ,CY_Apr  FLOAT64 
+    ,CY_May  FLOAT64 
+    ,CY_Jun  FLOAT64 
+    ,CY_Jul  FLOAT64 
+    ,CY_Aug  FLOAT64 
+    ,CY_Sep  FLOAT64 
+    ,CY_Oct  FLOAT64 
+    ,CY_Nov  FLOAT64 
+    ,CY_Dec  FLOAT64 
+    ,NY_Jan  FLOAT64 
+    ,NY_Feb  FLOAT64 
+    ,NY_Mar  FLOAT64 
+    ,NY_Apr  FLOAT64 
+    ,NY_May  FLOAT64 
+    ,NY_Jun  FLOAT64 
+    -- ,NY_Jul  FLOAT64 
+    -- ,NY_Aug  FLOAT64 
+    -- ,NY_Sep  FLOAT64 
+    -- ,NY_Oct  FLOAT64 
+    -- ,NY_Nov  FLOAT64 
+    -- ,NY_Dec  FLOAT64 
+
+	
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  [''] --Update as needed
+  ,sheet_range = 'Operations Fcst Input'  --Sheet Name
+  ,skip_leading_rows = 11
+  --,header = 0
+)
+
