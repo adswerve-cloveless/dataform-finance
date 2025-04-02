@@ -46,7 +46,7 @@ SET SQL1 = CONCAT(
               ,RevToDate
               ,Total_Overages
               ,Def_Balance
-              ,Fcst_Var 
+              ,ROUND(Fcst_Var,2) AS Fcst_Var
               ,CY_Jan 
               ,CY_Feb 
               ,CY_Mar 
