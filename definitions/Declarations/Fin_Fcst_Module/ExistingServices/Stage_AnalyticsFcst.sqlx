@@ -60,7 +60,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
 OPTIONS (
   format = 'GOOGLE_SHEETS'
   ,uris =  ['https://docs.google.com/spreadsheets/d/1kW_JtKGSueahwIIfQ6rxx_6CpgaDKRH37-LrQ7OJJg8'] --Update as needed
-  ,sheet_range = 'Operations Fcst Input'  --Sheet Name
+  ,sheet_range = 'Operations Fcst'  --Sheet Name
   ,skip_leading_rows = 11
   --,header = 0
 )
