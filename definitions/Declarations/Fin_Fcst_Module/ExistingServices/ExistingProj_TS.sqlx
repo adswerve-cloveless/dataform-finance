@@ -1,0 +1,87 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "ExistingProjs_TS"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_TS`()
+BEGIN
+
+
+
+DECLARE SQL1 STRING;
+DECLARE Table_Nm STRING;
+
+
+SET Table_Nm = CONCAT(
+                      "adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_TS_"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+
+
+
+
+SET SQL1 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              Table_Nm,
+              ''' AS SELECT 
+              Customer_Nm
+              ,Harvest_Nm
+              ,Harvest_ID
+              ,Project_ID
+              ,Analytics_Director
+              ,Analytics_Manager
+              ,Consultants
+              ,Acct_Owner
+              ,Inactive
+              ,Product__c
+              ,G_Funded
+              ,MRK_Vs_AGY
+              ,Project_Type
+              ,PARSE_DATE('%m/%d/%Y', Infer_StartDt) AS Infer_StartDt
+              ,PARSE_DATE('%m/%d/%Y', Infer_EndDt) AS Infer_EndDt
+              ,Contract_Rate
+              ,Contract_Val
+              ,RevToDate
+              ,Total_Overages
+              ,Def_Balance
+              ,Fcst_Var 
+              ,CY_Jan 
+              ,CY_Feb 
+              ,CY_Mar 
+              ,CY_Apr 
+              ,CY_May 
+              ,CY_Jun 
+              ,CY_Jul 
+              ,CY_Aug 
+              ,CY_Sep 
+              ,CY_Oct 
+              ,CY_Nov 
+              ,CY_Dec 
+              ,NY_Jan 
+              ,NY_Feb 
+              ,NY_Mar 
+              ,NY_Apr 
+              ,NY_May 
+              ,NY_Jun 
+              ,NY_Jul 
+              ,NY_Aug 
+              ,NY_Sep 
+              ,NY_Oct 
+              ,NY_Nov 
+              ,NY_Dec 
+
+              
+              
+              
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.Stage_TS`;''');
+
+
+
+
+EXECUTE IMMEDIATE SQL1;
+
+
+
+END;
