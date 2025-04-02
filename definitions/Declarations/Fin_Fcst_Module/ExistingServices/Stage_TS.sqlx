@@ -47,20 +47,20 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,NY_Apr  FLOAT64 
     ,NY_May  FLOAT64 
     ,NY_Jun  FLOAT64 
-    -- ,NY_Jul  FLOAT64 
-    -- ,NY_Aug  FLOAT64 
-    -- ,NY_Sep  FLOAT64 
-    -- ,NY_Oct  FLOAT64 
-    -- ,NY_Nov  FLOAT64 
-    -- ,NY_Dec  FLOAT64 
+    ,NY_Jul  FLOAT64 
+    ,NY_Aug  FLOAT64 
+    ,NY_Sep  FLOAT64 
+    ,NY_Oct  FLOAT64 
+    ,NY_Nov  FLOAT64 
+    ,NY_Dec  FLOAT64 
 
 	
 
 )
 OPTIONS (
   format = 'GOOGLE_SHEETS'
-  ,uris =  [''] --Update as needed
-  ,sheet_range = 'Operations Fcst Input'  --Sheet Name
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1H7BWX2I3mf2fkQ2apl-bpTZzx3y6W5NlATXOZ_Uv3X4'] --Update as needed
+  ,sheet_range = 'Operations Fcst'  --Sheet Name
   ,skip_leading_rows = 11
   --,header = 0
 )
