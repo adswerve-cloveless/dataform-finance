@@ -14,7 +14,12 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Com
     ,Customer_ID STRING
     ,Project_Type STRING
     ,Class STRING
-    
+    ,G_Funded STRING
+    ,MRK_Vs_AGY STRING
+    ,Inactive STRING
+    ,Fcst_Class STRING
+
+
     ,PY_Jan FLOAT64
     ,PY_Feb FLOAT64
     ,PY_Mar FLOAT64
@@ -57,7 +62,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Com
 )
 OPTIONS (
   format = 'GOOGLE_SHEETS'
-  ,uris =  ['https://docs.google.com/spreadsheets/d/1ieX7ujDrUd5o3wKjc_Sp7QnCBYc-6Pnx94T5HLBQzEM'] --Update as needed
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1grwgGtomD70eWyWD1AFbyPRe0mbpzNNgfMjld8vvghQ'] --Update as needed
   ,sheet_range = 'Commission Input'  --Update as needed
   ,skip_leading_rows = 10
   --,header = 0
