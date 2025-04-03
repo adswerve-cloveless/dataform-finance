@@ -12,6 +12,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Com
     
     Customer_Nm STRING
     ,Customer_ID STRING
+    ,NS_Project_ID STRING
     ,Project_Type STRING
     ,Class STRING
     ,G_Funded STRING
