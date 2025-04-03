@@ -1,5 +1,5 @@
 config {
-  type: "table",
+  type: "operations",
   database: "adswerve-finance-reporting",
   schema: "Fcst_Module",
   name: "CommAndDV360_Input"
