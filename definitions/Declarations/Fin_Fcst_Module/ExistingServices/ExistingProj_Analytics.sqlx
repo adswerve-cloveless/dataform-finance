@@ -71,6 +71,7 @@ SET SQL1 = CONCAT(
               ,NY_Oct 
               ,NY_Nov 
               ,NY_Dec 
+              ,Fcst_Class
 
               
               
