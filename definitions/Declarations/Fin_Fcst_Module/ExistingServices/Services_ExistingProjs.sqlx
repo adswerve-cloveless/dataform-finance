@@ -5,35 +5,266 @@ config {
   name: "Services_ExistingProjs"
 }
 
-DECLARE Max_Snapshot,CY_START,PY_START,Report_Period DATE;
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjects`(Report_Period DATE)
+OPTIONS (strict_mode=false)
+BEGIN
+
+
+DECLARE Max_Snapshot,PY_START,CY_START DATE;
+-- DECLARE Report_Period DATE;
+DECLARE TimePeriod ,T12Total, T24Total,TotalFcst ,SQL1, SQL2, CY, PY, NY STRING;
 
 SET Max_Snapshot = (SELECT MAX(PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX)) FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E);
-
-SET CY_START = "2025-01-01";
+-- SET Report_Period = "2025-03-01";
+SET CY_START = DATE(EXTRACT(YEAR FROM Report_Period),1,1);
 SET PY_START = DATE_SUB(CY_START, INTERVAL 1 YEAR);
-SET Report_Period = "2025-01-01";
-
--- CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.Services_ExistingProjects_v2`()
--- OPTIONS (strict_mode=false)
--- BEGIN
-
--- CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.Services_ExistingProjects_v2` AS
+SET CY = LEFT(CAST(CY_START AS STRING),4);
+SET PY = LEFT(CAST(PY_START AS STRING),4);
+SET NY = LEFT(CAST(DATE_ADD(CY_START, INTERVAL 1 YEAR) AS STRING),4);
 
 
--------------------------------------------------------------------------------------------------------------------------------------------------
-/* Projects in NS - Start */
--------------------------------------------------------------------------------------------------------------------------------------------------
+SET TimePeriod =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(CY_START AS DATE) 
+                                        ,DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+SET T12Total =(
+SELECT STRING_AGG(Timeline,'+')
+FROM( 
+      SELECT CAST( FORMAT_DATE("%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(CY_START AS DATE) 
+                                        ,DATE_ADD(CAST(CY_START AS DATE), INTERVAL 11 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+SET T24Total =(
+SELECT STRING_AGG(Timeline,'+')
+FROM( 
+      SELECT CAST( FORMAT_DATE("%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(CY_START AS DATE) 
+                                        ,DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET TotalFcst =(
+SELECT STRING_AGG(Timeline,'+')
+FROM( 
+      SELECT CAST( FORMAT_DATE("%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        DATE_ADD(CAST(Report_Period AS DATE), INTERVAL 1 MONTH) 
+                                        ,DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+
+SET SQL1 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` AS (
+
+WITH PVT AS (
+SELECT
+  * 
+FROM ProjectData 
+PIVOT(SUM(IFNULL(RevPerMonth,0)) FOR Timeline IN (''' || TimePeriod || ''')))
+
+SELECT
+  *
+  ,ROUND(SUM(''' || T12Total || '''),2) AS T12Total
+  ,ROUND(SUM(''' || T24Total || '''),2) AS T24Total
+  ,ROUND(SUM(''' || TotalFcst || '''),2) AS TotalFcst
+  ,CASE
+    WHEN Project_Type = "Rate Card" THEN 0
+    ELSE ROUND(Contract_Val - (IFNULL(RevToDate,0)-IFNULL(Total_Overages,0)) - ROUND(SUM(''' || TotalFcst || '''),2),2)
+   END AS Fcst_Var
+  ,IF(IN_SF_NotInNS = "F" AND (Class IS NULL OR Class = "" ),TRUE,FALSE) AS Aduit_No_Clas
+  ,IF(IN_SF_NotInNS = "F" AND Project_Type <> "Rate Card" AND (Contract_VAL IS NULL OR Contract_Val=0),TRUE,FALSE) AS Audit_NoContractValue
+  ,IF(Infer_StartDt=Infer_EndDt,TRUE,FALSE) AS Audit_StartEnd_Same
+  ,IF(IN_SF_NotInNS = "F" AND Inactive ="F" AND NS_EndDt<CAST("''' || Report_Period || '''" AS DATE),TRUE,FALSE) AS Audit_Past_NS_EndDt
+  ,IF(IN_SF_NotInNS = "F" AND Contract_Rate>310 AND Inactive="F",TRUE,FALSE) AS Audit_Rate_GreaterThan_310
+  ,IF(IN_SF_NotInNS = "F" AND Contract_Rate<200 AND Inactive="F",TRUE,FALSE) AS Audit_Rate_LessThan_200
+  ,IF(IN_SF_NotInNS = "F" AND Inactive="F" AND 
+      (NS_Harvest_ID IS NULL OR NS_Harvest_ID = ""),TRUE,FALSE) AS Audit_No_Harvest_ID
+  ,IF(IN_SF_NotInNS = "F" AND (Currency <> "US Dollar" OR Currency IS NULL),FALSE,TRUE) AS Audit_Has_UScurrency
+  ,IF(Project_Type IS NULL OR Project_Type = "",FALSE,TRUE ) AS Audit_Has_Project_Type
+FROM PVT
+GROUP BY ALL
+)
+;''';
+
+
+SET SQL2 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs_Audit` AS (
+
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Aduit_No_Clas" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  Aduit_No_Clas = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_NoContractValue" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_NoContractValue = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_NoContractValue" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_NoContractValue = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_StartEnd_Same" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_StartEnd_Same = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Past_NS_EndDt" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Past_NS_EndDt = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Past_NS_EndDt" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Past_NS_EndDt = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Rate_GreaterThan_310" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Rate_GreaterThan_310 = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Rate_LessThan_200" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Rate_LessThan_200 = TRUE
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_No_Harvest_ID" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_No_Harvest_ID = TRUE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Has_UScurrency" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Has_UScurrency = FALSE 
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Audit_Has_Project_Type" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Audit_Has_Project_Type = FALSE
+  AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+
+)
+;''';
+
+CREATE OR REPLACE TEMP TABLE ProjectData AS
+
+
+--Step 1 [START] : Get Project Date that's In NS  ------------------------------------------------
+
 WITH Projects_1 AS (
 SELECT 
-  * 
-FROM ${ref("Project")} P
+  *
+FROM `adswerve-finance.Warehouse.Project` P
 WHERE
  P.Internal_ID NOT IN ("7710","9532","9008","9552")
  AND Status <> "xExclude"  
  AND NOT REGEXP_CONTAINS(P.Project_Type,"Internal")
- AND IF(P.project_end="",CAST(P.scheduled_end AS DATE),PARSE_DATE('%m/%d/%Y', P.project_end)) >= CY_START
+ AND IF(P.project_end="",CAST(P.scheduled_end AS DATE),PARSE_DATE('%m/%d/%Y', P.project_end)) >= PY_START
 )
-
 
 ,Projects_2 AS (
 SELECT 
@@ -44,189 +275,51 @@ SELECT
   ,R.Account
   ,SUM(Amount_Gross) AS Amount_Gross
   ,SUM(Amount_Net) AS Amount_Net
-FROM ${ref("Revenue_DataDump")} R
-LEFT JOIN ${ref("Customer")} C ON R.Customer_ID = C.internal_id
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
   R.Period >= CY_START
   AND REGEXP_CONTAINS(R.Account,"43130|42115|43140|43150|43120|42135|43175|41117") 
   AND R.Project_ID NOT IN (SELECT DISTINCT Internal_ID FROM Projects_1)
 GROUP BY ALL
 )
+--Step 1 [END] : Get Project Date that's In NS  ------------------------------------------------
 
-
-,Commissions_DV360 AS (
-SELECT
-  CASE
-    WHEN P2.Project_ID="" AND REGEXP_CONTAINS(P2.Account,"DV360 - Services") THEN "41117-DV360"
-    WHEN P2.Project_ID="" AND REGEXP_CONTAINS(P2.Account,"Commissions") THEN "43175-Commissions"
-    ELSE P2.Project_ID
-  END AS Internal_id
-  ,CAST(Customer_ID AS STRING) AS customer_internal_id
-  ,CAST(NULL AS STRING) AS harvest_id
-  ,CAST(NULL AS STRING) AS account
-  ,CAST(NULL AS STRING) AS end_date
-  ,CAST(NULL AS STRING) AS work
-  ,CAST(NULL AS STRING) AS address
-  ,CAST(NULL AS STRING) AS address_1
-  ,CAST(NULL AS STRING) AS address_2
-  ,CAST(NULL AS STRING) AS address_3
-  ,CAST(NULL AS STRING) AS address_internal_id
-  ,CAST(NULL AS STRING) AS address_label
-  ,CAST(NULL AS STRING) AS address_phone
-  ,CAST(NULL AS STRING) AS addressee
-  ,CAST(NULL AS STRING) AS allocate_payroll
-  ,CAST(NULL AS STRING) AS allocated_work
-  ,CAST(NULL AS STRING) AS allow_entry
-  ,CAST(NULL AS STRING) AS allow_expenses
-  ,CAST(NULL AS STRING) AS allow_time
-  ,CAST(NULL AS STRING) AS alt_contact
-  ,CAST(NULL AS STRING) AS alt_email
-  ,CAST(NULL AS STRING) AS attention
-  ,CAST(NULL AS STRING) AS bill_address_1
-  ,CAST(NULL AS STRING) AS bill_address_2
-  ,CAST(NULL AS STRING) AS bill_address_3
-  ,CAST(NULL AS STRING) AS bill_addressee
-  ,CAST(NULL AS STRING) AS bill_attn
-  ,CAST(NULL AS STRING) AS bill_city
-  ,CAST(NULL AS STRING) AS bill_country
-  ,CAST(NULL AS STRING) AS bill_item
-  ,CAST(NULL AS STRING) AS bill_phone
-  ,CAST(NULL AS STRING) AS bill_rate
-  ,CAST(NULL AS STRING) AS bill_schedule
-  ,CAST(NULL AS STRING) AS bill_state
-  ,CAST(NULL AS STRING) AS bill_type
-  ,CAST(NULL AS STRING) AS bill_zip
-  ,CAST(NULL AS STRING) AS bounced
-  ,CAST(NULL AS STRING) AS budget_amount
-  ,CAST(NULL AS STRING) AS end_date_calc
-  ,CAST(NULL AS STRING) AS end_date_base
-  ,CAST(NULL AS STRING) AS start_date_calc
-  ,CAST(NULL AS STRING) AS start_date_base
-  ,CAST(NULL AS STRING) AS calc_work
-  ,CAST(NULL AS STRING) AS calc_base
-  ,CAST(NULL AS STRING) AS category
-  ,CAST(NULL AS STRING) AS city
-  ,CAST(NULL AS STRING) AS time_exempt
-  ,CAST(NULL AS STRING) AS time_productive
-  ,CAST(NULL AS STRING) AS time_utilized
-  ,CAST(NULL AS STRING) AS comments
-  ,CAST(NULL AS STRING) AS country
-  ,CAST(NULL AS STRING) AS planned_time
-  ,CAST(NULL AS STRING) AS currency
-  ,CAST(NULL AS STRING) AS customer
-  ,CAST(NULL AS STRING) AS dashboard
-  ,CAST(NULL AS STRING) AS created
-  ,CAST(NULL AS STRING) AS default_bill
-  ,CAST(NULL AS STRING) AS default_ship
-  ,CAST(NULL AS STRING) AS display_all
-  ,CAST(NULL AS STRING) AS email
-  ,CAST(NULL AS STRING) AS estimated_gross
-  ,CAST(NULL AS STRING) AS estimated_profit
-  ,CAST(NULL AS STRING) AS estimated_profit_percent
-  ,CAST(NULL AS STRING) AS estimated_labor
-  ,CAST(NULL AS STRING) AS estimated_labor_base
-  ,CAST(NULL AS STRING) AS estimated_labo_revenue
-  ,CAST(NULL AS STRING) AS estimated_revenue
-  ,CAST(NULL AS STRING) AS exchange
-  ,CAST(NULL AS STRING) AS external_id
-  ,CAST(NULL AS STRING) AS fax
-  ,CAST(NULL AS STRING) AS forecast
-  ,CAST(NULL AS STRING) AS inactive
-  ,CAST(NULL AS STRING) AS include_crm_tasks
-  ,CAST(NULL AS STRING) AS time_budget
-  ,CAST(NULL AS STRING) AS language
-  ,CAST(NULL AS STRING) AS baseline_date
-  ,CAST(NULL AS STRING) AS modified
-  ,CAST(NULL AS STRING) AS level
-  ,CAST(NULL AS STRING) AS time_expenses
-  ,CAST(NULL AS STRING) AS name
-  ,CAST(NULL AS STRING) AS number
-  ,CAST(NULL AS STRING) AS phone_office
-  ,CAST(NULL AS STRING) AS overage
-  ,CAST(NULL AS STRING) AS complete
-  ,CAST(NULL AS STRING) AS complete_resource
-  ,CAST(NULL AS STRING) AS complete_time
-  ,CAST(NULL AS STRING) AS permission
-  ,CAST(NULL AS STRING) AS phone
-  ,CAST(NULL AS STRING) AS planned_work
-  ,CAST(NULL AS STRING) AS planned_baseline
-  ,CAST(NULL AS STRING) AS contact
-  ,CAST(NULL AS STRING) AS complete_billed
-  ,CAST(NULL AS STRING) AS manager
-  ,CAST(NULL AS STRING) AS manager_custom
-  ,CAST(NULL AS STRING) AS project_name
-  ,CAST(NULL AS STRING) AS project_price
-  ,CAST(NULL AS STRING) AS project_resource
-  ,CAST(NULL AS STRING) AS project_role
-  ,CAST(NULL AS STRING) AS project_type
-  ,CAST(NULL AS STRING) AS project_end
-  ,CAST(NULL AS STRING) AS project_baseline
-  ,CAST(NULL AS STRING) AS remaining
-  ,CAST(NULL AS STRING) AS rep_subsidiary
-  ,CAST(NULL AS STRING) AS retainer
-  ,CAST(NULL AS STRING) AS rev_rec_rule
-  ,CAST(NULL AS STRING) AS scheduled_end
-  ,CAST(NULL AS STRING) AS scheduled_baseline
-  ,CAST(NULL AS STRING) AS schedule_method
-  ,CAST(NULL AS STRING) AS ship_1
-  ,CAST(NULL AS STRING) AS ship_2
-  ,CAST(NULL AS STRING) AS ship_3
-  ,CAST(NULL AS STRING) AS ship_addressee
-  ,CAST(NULL AS STRING) AS ship_attention
-  ,CAST(NULL AS STRING) AS ship_city
-  ,CAST(NULL AS STRING) AS ship_country
-  ,CAST(NULL AS STRING) AS ship_phone
-  ,CAST(NULL AS STRING) AS ship_state
-  ,CAST(NULL AS STRING) AS ship_zip
-  ,CAST(NULL AS STRING) AS source_item
-  ,CAST(NULL AS STRING) AS start
-  ,CAST(NULL AS STRING) AS start_baseline
-  ,CAST(NULL AS STRING) AS state
-  ,CAST(NULL AS STRING) AS status
-  ,CAST(NULL AS STRING) AS subsidiary
-  ,CAST(NULL AS STRING) AS subsidiary_flat
-  ,CAST(NULL AS STRING) AS time_approval
-  ,CAST(NULL AS STRING) AS forecast_allocated
-  ,CAST(NULL AS STRING) AS complete_override
-  ,CAST(NULL AS STRING) AS vat_reg
-  ,CAST(NULL AS STRING) AS zip
-  ,CAST(NULL AS INT64) AS rn
-FROM Projects_2 P2
-)
+--Step 3 [START] : Consolidate Projects, Commissions, & DV360  ------------------------------------------------
 
 ,Prj_Final AS(
 SELECT * FROM Projects_1
 ----------------------------------------------------------
-UNION ALL
+UNION DISTINCT
 ------------------------------------------------------------
 SELECT 
   P.*
-FROM ${ref("Project")} P
+FROM `adswerve-finance.Warehouse.Project` P
 INNER JOIN Projects_2 P2 ON
   P.internal_id = P2.Project_ID   
   AND P.customer_internal_id  = P2.Customer_ID       
 
-----------------------------------------------------------
-UNION ALL 
-----------------------------------------------------------
-SELECT * FROM Commissions_DV360 C
-WHERE 
-  REGEXP_CONTAINS(internal_id,"-")
 )
 
+
+--Step 3 [END] : Consolidate Projects, Commissions, & DV360  ------------------------------------------------
+
+--Step 4 [START] : Get NS Project Class Data  ------------------------------------------------
 
 ,ClassDetail AS(
 SELECT 
   DISTINCT
   ProjectId
   ,Class
-FROM ${ref("NS_Sales_Orders")}
+FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders` 
 WHERE
   ProjectId IS NOT NULL
   AND Class IS NOT NULL
   AND Item <> "Admin Fee"
 )
+--Step 4 [END] : Get NS Project Class Data  ------------------------------------------------
 
+--Step 5 [START] : Get SalesForce Data, Contract Value, & Contract Rate for NS Projects  ------------------------------------------------
 
 ,NS_Opps AS (
 SELECT 
@@ -278,31 +371,22 @@ SELECT
   ,P.estimated_profit_percent
   -- ,P.project_baseline
   ,P.remaining
-  -- ,IFNULL(CAST(S.Contract_Rate__c AS NUMERIC),
-  --     ROUND(SAFE_DIVIDE(
-              
-  --                 IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
-  --                     ,IFNULL(S.Contract_Value__c, 0) 
-  --                     ,CAST(P.estimated_labo_revenue AS NUMERIC))
-  --                 ,CAST(P.planned_work AS NUMERIC)
-  --             )
-  --           ,2)
-  --   ) AS Contract_Rate__c
-  ,IF(P.Project_Type ="Retainer" OR P.Project_Type ="Rete Card", CAST(S.Contract_Rate__c AS FLOAT64), 
+
+  ,IF(P.Project_Type ="Retainer" OR P.Project_Type ="Rate Card", CAST(S.Contract_Rate__c AS FLOAT64), 
    ROUND(SAFE_DIVIDE(        
-            IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
-                  ,IFNULL(S.Contract_Value__c, 0) 
-                  ,CAST(P.estimated_labo_revenue AS NUMERIC))
+            -- IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
+            --       ,IFNULL(S.Contract_Value__c, 0) 
+            --       ,CAST(P.estimated_labo_revenue AS NUMERIC))
+              K.total_value
               ,CAST(P.planned_work AS NUMERIC)
               )
             ,2)) AS Contract_Rate__c
-  -- ,S.Contract_Value__c
 
-  ,V.total_value AS Contract_Value
-
+  ------------------------------------------------------------------------------
   -- ,IF(P.estimated_labo_revenue IS NULL OR P.estimated_labo_revenue = "0" OR P.estimated_labo_revenue = ""
   --     ,IFNULL(S.Contract_Value__c, 0) 
   --     ,CAST(P.estimated_labo_revenue AS NUMERIC))  AS Contract_Value__c
+  ,K.total_value AS Contract_Value__c
   ------------------------------------------------------------------------------
 
   ,C.google_funded
@@ -311,34 +395,30 @@ SELECT
   ,P.Inactive
   ,P.Currency
   ,"F" AS IN_SF_NotInNS
-  -- ,CAST(S.Contract_Rate__c AS FLOAT64) AS AuditContractRate --AuditContractValue (Changed to improve overlay)
+
 FROM Prj_Final P
-LEFT JOIN  ${ref("sow")} /*`adswerve-sfdc.Warehouse.sow`*/ S ON P.harvest_id = S.Harvest_Project_Id__c
+LEFT JOIN `adswerve-sfdc.Warehouse.sow` S ON P.harvest_id = S.Harvest_Project_Id__c
 LEFT JOIN ClassDetail O ON P.Internal_ID = O.ProjectId
-LEFT JOIN ${ref("Customer")} C ON P.customer_internal_id = C.internal_id
-LEFT JOIN ${ref("TotalProjectValue")} V ON P.Internal_ID = V.Project_ID
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON P.customer_internal_id = C.internal_id
+LEFT JOIN `adswerve-finance.Fin_Stage.Manual_TotalProjectValue_View` K ON P.Internal_ID = K.project_id
 WHERE
-  NOT REGEXP_CONTAINS(P.Project_Type,"Internal")
+  NOT REGEXP_CONTAINS(IFNULL(P.Project_Type,""),"Internal")
 --   EXTRACT(YEAR FROM CAST(P.end_date AS DATE) ) >= 2024
 
 ORDER BY
   P.Internal_ID
   ,O.Class
 )
--------------------------------------------------------------------------------------------------------------------------------------------------
-/* Projects in NS And Commissions and DV360 - END */
--------------------------------------------------------------------------------------------------------------------------------------------------
+--Step 5 [END] : Get SalesForce Data, Contract Value, & Contract Rate for NS Projects  ------------------------------------------------
 
--- SELECT * FROM NS_Opps
 
--------------------------------------------------------------------------------------------------------------------------------------------------
-/* Projects in SF, but not in NS - Start */
--------------------------------------------------------------------------------------------------------------------------------------------------
+--Step 6 [START] : Get Data for Project In_SF_not_NS  ------------------------------------------------
+
 ,NS_Data AS(
 SELECT 
   DISTINCT
   OpportunityId
-FROM ${ref("NS_Sales_Orders")} --`adswerve-finance.Fin_Stage.NS_Sales_Orders`
+FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders`
 WHERE 
   OpportunityId IS NOT NULL
 )
@@ -372,7 +452,7 @@ SELECT
   ,Opportunity_Description__c
   ,O.Google_Funded__c
   
-FROM ${ref("NS_Sales_Orders")} /*`adswerve-sfdc.Warehouse.opportunity`*/ O
+FROM `adswerve-sfdc.Warehouse.opportunity` O
 LEFT JOIN NS_Data N ON O.Opportunity_Safe_ID__c = N.OpportunityId
 LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
 LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
@@ -382,6 +462,9 @@ WHERE
   AND CloseDate >= "2024-01-01"
   AND M.ServiceMapping IN ("Services")
 )
+--Step 6 [END] : Get Data for Project In_SF_not_NS  ------------------------------------------------
+
+--Step 7 [START] : Format Data for Projects In_SF_not_NS  ------------------------------------------------
 
 ,SF_OppData_Formatted AS(
 SELECT
@@ -412,19 +495,18 @@ SELECT
   ,/*23*/CAST(NULL AS STRING) AS estimated_profit -- Will Always be NULL
   ,/*24*/CAST(NULL AS STRING) AS estimated_profit_percent -- Will Always be NULL
   
-  -- ,/*25*/CAST(SUM(`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)) AS STRING) AS remaining -- 100%
-  ,/*25*/CAST(SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
+
+  ,/*25*/CAST(
+    SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
     ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)
     ,O.Opportunity_Value_Net__c)) AS STRING) AS remaining ---Upadted 1/4/2025
 
+                                        
   ,/*26*/NULL AS Contract_Rate__c  --NUll For now, could possibly use Estmated hours/inferred contract value
-  
-  -- ,/*27*/SUM(`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)) AS Contract_Value__c
+
   ,/*27*/SUM(IF(O.CloseDate <= "2024-12-31" /*OR B.SnapShot_Date <= "2025-01-03"*/
     ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(O.Product_Combine__c, O.Opportunity_Value__c, O.Opportunity_Value_Net__c)
     ,O.Opportunity_Value_Net__c)) AS Contract_Value__c ---Upadted 1/4/2025
-
-
 
   ,/*28*/CASE 
           WHEN O.Google_Funded__c IS NULL THEN "F"
@@ -433,7 +515,7 @@ SELECT
           ELSE "Error"
         END AS google_funded 
   ,/*29*/C.account_category AS MRK_Vs_AGY -- get from customer table 
-  -- ,/*30*/O.Service__c AS Project_Type  -- same as contract type
+
   ,/*30*/
     CASE
       WHEN REGEXP_CONTAINS(O.Service__c,"Retainer") THEN "Retainer"
@@ -441,24 +523,26 @@ SELECT
       WHEN REGEXP_CONTAINS(O.Service__c,"Rate Card") THEN "Rate Card"
       ELSE "Fixed Bid"
     END AS Project_Type
+
   ,/*31*/CAST(NULL AS STRING) AS Inactive -- Will Always be NULL
   ,/*32*/CAST(NULL AS STRING) AS Currency -- Will Always be NULL
   ,/*33*/"T" AS IN_SF_NotInNS
-  -- ,/*33*/CAST(NULL AS NUMERIC) AS AuditContractValue
+
 FROM SF_OppData O
-LEFT JOIN ${ref("Customer")} /*`adswerve-finance.Warehouse.Customer`*/ C ON O.celigo_sfnsio__NetSuite_Id__c = C.Internal_ID
-LEFT JOIN ${ref("ProductFamilyClassMap")} /*`adswerve-finance.Fin_DataSources.ProductFamilyClassMap`*/ M ON O.Product_Family__c = M.Product_Family
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON O.celigo_sfnsio__NetSuite_Id__c = C.Internal_ID
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` M ON O.Product_Family__c = M.Product_Family
 WHERE
  SF_OpportunityID <> "006Rp00000DyakIIAR"
 GROUP BY ALL
 )
+--Step 7 [END ] : Format Data for Projects In_SF_not_NS  ------------------------------------------------
 
-
+--Step 8 [START] : Consolidate all Projects with Commissions & DV360  ------------------------------------------------
 
 ,Consolidated AS (
 SELECT * FROM NS_Opps
-WHERE
-  Currency ="US Dollar"
+-- WHERE
+--   Currency ="US Dollar"
 ------------------------------------------------------------
 UNION ALL
 SELECT * FROM SF_OppData_Formatted
@@ -510,17 +594,16 @@ SELECT
   ,CAST(NULL AS STRING) AS Currency
   , "F" AS IN_SF_NotInNS
 
-FROM ${ref("Revenue_DataDump")} /*`adswerve-finance.Fin_DataSources.Revenue_DataDump`*/ R
-LEFT JOIN ${ref("Customer")} /*`adswerve-finance.Warehouse.Customer`*/ C ON R.Customer_ID = C.internal_id
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
   REGEXP_CONTAINS(R.Account,"41117|43175")
   AND Period >= PY_START
   AND Period <= Report_Period
  )
--- --------------------------------------------------------------
--- SELECT * FROM Consolidated LIMIT 1
--- --------------------------------------------------------------
+--Step 8 [END] : Consolidate all Projects with Commissions & DV360  ------------------------------------------------
 
+--Step 9 [START] : Assign Classes to IN_SF_NotInNS Projects  ------------------------------------------------
 
 ,BASE_1 AS (
 SELECT
@@ -551,22 +634,17 @@ WHERE
   )
 )
 
--- -- --------------------------------------------------------------
--- SELECT 
---   B.* 
---   ,V.total_value AS ContractVal2
--- FROM Base_1 B
--- LEFT JOIN ${ref("Manual_TotalProjectValue")} V ON B.NS_Project_ID = V.Project_ID
--- -- --------------------------------------------------------------
+--Step 9 [END] : Assign Classes to IN_SF_NotInNS Projects  ------------------------------------------------
 
+--Step 10 [START] : Create Overide System and Assign Fcst Class to NS Projects ------------------------------
 
 ,BASE_2 AS (
 SELECT
   P.NS_Project_ID	
   ,P.NS_Customer_ID	
   ,P.NS_Harvest_ID	
-  ,P.Parent_Name	
-  ,P.project_name	
+  ,P.Parent_Name AS Customer_Nm	
+  ,P.Project_name	
   ,P.Product__c	
   ---------------------------------------------------------
   -- ,P.Class	
@@ -578,9 +656,8 @@ SELECT
   ,P.NS_EndDt	
   ,P.SF_EndDt	
   ---------------------------------------------------------
-  -- ,P.Infer_StartDt	
   ,IF(A.NS_Project_ID IS NOT NULL,IFNULL(A.Infer_StartDt,P.Infer_StartDt),P.Infer_StartDt) Infer_StartDt 
-  -- ,P.Infer_EndDt	
+
   ,CASE
     WHEN IF(A.NS_Project_ID IS NOT NULL,IFNULL(A.Project_Type,P.Project_Type),P.Project_Type) = "Retainer"
         AND P.IN_SF_NotInNS	= "F"
@@ -590,38 +667,42 @@ SELECT
   ---------------------------------------------------------
   ,P.SF_LastModifiedDt	
   ,P.NS_LastModifiedDt	
-  ,P.work	
-  ,P.calc_work	
-  ,P.planned_work	
-  ,P.budget_amount	
-  ,P.estimated_labo_revenue	
-  ,P.estimated_labor	
-  ,P.estimated_profit	
-  ,P.estimated_profit_percent	
-  ,P.remaining	
-  --,P.Contract_Rate__c AS Contract_Rate	
-  -- ,P.Contract_Rate__c AS Contract_Rate	
-  ,IF(P.Project_Type ="Retainer" OR P.Project_Type ="Rete Card",AuditContractRate,
-  IF(A.NS_Project_ID IS NOT NULL,IFNULL( 
-                        SAFE_DIVIDE(A.Contract_Value,CAST(P.planned_work AS FLOAT64))
-                        ,SAFE_DIVIDE(P.Contract_Value__c,CAST(P.planned_work AS FLOAT64))	)
-                    ,SAFE_DIVIDE(P.Contract_Value__c,CAST(P.planned_work AS FLOAT64))
-      )) AS Contract_Rate
+  ,P.Work	
+  ,P.Calc_work	
+  ,P.Planned_work	
+  ,P.Budget_amount	
+  ,P.Estimated_labo_revenue	
+  ,P.Estimated_labor	
+  ,P.Estimated_profit	
+  ,P.Estimated_profit_percent	
+  ,P.Remaining	
+
+  -- ,IF(P.Project_Type ="Retainer" OR P.Project_Type ="Rate Card",0,
+  --   IF(A.NS_Project_ID IS NOT NULL,IFNULL( 
+  --                         SAFE_DIVIDE(A.Contract_Value,CAST(P.planned_work AS FLOAT64))
+  --                         ,SAFE_DIVIDE(P.Contract_Value__c,CAST(P.planned_work AS FLOAT64))	)
+  --                     ,SAFE_DIVIDE(P.Contract_Value__c,CAST(P.planned_work AS FLOAT64))
+  --       )) AS Contract_Rate
+  ,P.Contract_Rate__c AS Contract_Rate 
   ---------------------------------------------------------
-  -- ,P.Contract_Value__c	
-  ,IF(A.NS_Project_ID IS NOT NULL,IFNULL(A.Contract_Value ,P.Contract_Value__c),P.Contract_Value__c) AS Contract_Val
+  -- ,IF(A.NS_Project_ID IS NOT NULL,IFNULL(A.Contract_Value ,P.Contract_Value__c),P.Contract_Value__c) AS Contract_Val
+  ,CASE
+    WHEN P.Project_Type = "Rate Care" THEN 0
+    WHEN A.NS_Project_ID IS NOT NULL THEN IFNULL(A.Contract_Value ,P.Contract_Value__c)
+    ELSE P.Contract_Value__c
+   END AS Contract_Val
+
+
   ---------------------------------------------------------
   ,P.google_funded AS G_Funded	
   ,P.MRK_Vs_AGY	
   ---------------------------------------------------------
-  -- ,P.Project_Type	
   ,IF(A.NS_Project_ID IS NOT NULL,IFNULL(A.Project_Type,P.Project_Type),P.Project_Type) Project_Type 
   ---------------------------------------------------------
   ,IF(IN_SF_NotInNS = "T","F",P.Inactive) AS Inactive
   ,P.Currency	
   ,P.IN_SF_NotInNS	
-  ,P.AuditContractRate	
-  ,"" AS I
+
   ,IFNULL(Fcst_Class,
     CASE 
       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
@@ -632,155 +713,474 @@ SELECT
       ELSE "Error"
     END
   ) AS Fcst_Class
-FROM BASE_1   --`adswerve-finance.Fin_DataSources.Services_ExistingProjects` P
-LEFT JOIN ${ref("Manual_ExistingSrvcs_Adj")} /*`adswerve-finance.Fin_Stage.Manual_ExistingSrvcs_Adj`*/ A ON P.NS_Project_ID = A.NS_Project_ID
+FROM Base_1 P 
+LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.ExistingServicesOverride` A ON P.NS_Project_ID = A.NS_Project_ID
+
+
+)
+--Step 10 [END] : Create Overite System and Assin Fcst Class to NS Projects ------------------------------
+
+--Step 11 [START] : Get Project Hours Data ------------------------------
+
+,Hours AS (
+SELECT
+  --DATE_TRUNC(Date,Month) AS Period
+  NULL AS Period
+  ,IFNULL(ProjectId,"NULL") AS ProjectId
+  ,ProjectName
+  ,SUM(
+    CASE
+      WHEN CONTAINS_SUBSTR(LOWER(client), "adswerve") THEN 0
+      WHEN Billable = "true" THEN Hours   
+      WHEN CONTAINS_SUBSTR(LOWER(TaskName), "fixed") THEN Hours
+      WHEN CONTAINS_SUBSTR(LOWER(ProjectName), "3PCD Masterclass: Privacy Sandbox 6/11") THEN Hours
+      ELSE 0
+    END
+  ) AS Billable_Hours
+  ,ROUND(SUM(Hours),2) AS Total_Hours
+  ,is_Active
+FROM `adswerve-time-tracking.reporting.reporting_prod` R
+LEFT JOIN `adswerve-time-tracking.warehouse.projects` P ON R.ProjectId = P.id
 WHERE
-  (
-     --EXTRACT(YEAR FROM CAST(NS_EndDt AS DATE) ) >= @CY
-     CAST(NS_EndDt AS DATE) >= DATE_SUB("2025-01-01"/*@CY_START*/, INTERVAL 2 MONTH)
-     AND Currency  IN (NULL,"US Dollar","Canadian Dollar")  
-  )
-  OR IN_SF_NotInNS = "T"
+  EXTRACT(YEAR FROM Date) >= 2021
+  -- AND EXTRACT(MONTH FROM Date) = 3
+  AND REGEXP_CONTAINS(Team,"Technical Services")
+  AND NOT REGEXP_CONTAINS(TeamMember, "Hubbard|Lauritzen")
+GROUP BY ALL
+)
+--Step 11 [END] : Get Project Hours Data ------------------------------
+
+--Step 12 [START] : Get SF Opp User Info ------------------------------
+,Opps AS (
+SELECT
+  DISTINCT
+  ProjectId
+  ,OpportunityId
+FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders`
+WHERE 
+  ProjectId IN (SELECT DISTINCT NS_Project_ID FROM BASE_2)
+ORDER BY 1
+)
+
+,SFdata AS (
+SELECT 
+  O.ProjectId
+  ,O.OpportunityId
+  ,P.OwnerId
+  ,U.Name AS Opp_Owner
+  ,P.Strategic_Consultant__c AS Consultants
+  ,P.AccountId
+  ,A.Account_Owner__c AS Acct_Owner
+FROM Opps O
+LEFT JOIN `adswerve-sfdc.Warehouse.opportunity` P ON O.OpportunityId = P.Opportunity_Safe_ID__c
+LEFT JOIN `adswerve-sfdc.Warehouse.user` U ON P.OwnerId = U.ID
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON P.AccountId = A.Account_Case_Safe_ID__c
+)
+
+,TS_Directors AS (
+SELECT 
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
+  ,STRING_AGG(E.User_Nm ,', ') AS User_Nm 
+  ,STRING_AGG(E.Account_Team_Member_ID,', ') AS Account_Team_Member_ID
+  ,E.Account_Case_Safe_ID
+  ,E.Team_Role
+FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
+WHERE
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
+  AND  REGEXP_CONTAINS(Team_Role,"TS Director")
+GROUP BY ALL 
+)
+
+,Analytics_Directors AS (
+SELECT 
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
+  ,STRING_AGG(E.User_Nm ,', ') AS User_Nm 
+  ,STRING_AGG(E.Account_Team_Member_ID,', ') AS Account_Team_Member_ID
+  ,E.Account_Case_Safe_ID
+  ,E.Team_Role
+FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
+WHERE
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
+  AND  REGEXP_CONTAINS(Team_Role,"Analytics Director")
+GROUP BY ALL
+)
+
+,Analytics_Manager AS (
+SELECT 
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
+  ,STRING_AGG(E.User_Nm ,', ') AS User_Nm 
+  ,STRING_AGG(E.Account_Team_Member_ID,', ') AS Account_Team_Member_ID
+  ,E.Account_Case_Safe_ID
+  ,E.Team_Role
+FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
+WHERE
+  PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
+  AND  REGEXP_CONTAINS(Team_Role,"Analytics Manager")
+GROUP BY ALL
+)
+--Step 12 [END] : Get SF Opp User Info ------------------------------
+
+--Step 13 [START] : Get Rev Actuals Data  ------------------------------
+
+,Periods AS (
+SELECT 
+  X AS Timeline
+  ,FORMAT_DATE(IF(LEFT(CAST(X AS STRING),4)=CY,"CY_%b","NY_%b"), X) AS Joiner
+FROM UNNEST
+(GENERATE_DATE_ARRAY( CY_START
+                      ,DATE_ADD(CY_Start, INTERVAL 23 MONTH)
+                      ,INTERVAL 1 MONTH  
+                    )
+) AS X)
+
+
+,ActualsTotal AS (
+SELECT
+  Project_ID
+  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  ,SUM(Amount_Net_CY) AS Amt_Net
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+ Project_ID IN (SELECT NS_Project_ID FROM Base_2)
+ AND Period <= Report_Period
+GROUP BY ALL
+)
+
+
+,YTD_Rev AS (
+SELECT
+  Project_ID
+  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  ,SUM(Amount_Net_CY) AS Amt_Net
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+ Project_ID IN (SELECT NS_Project_ID FROM Base_2)
+ AND EXTRACT(YEAR FROM PERIOD) = EXTRACT(YEAR FROM Report_Period)
+GROUP BY ALL
+)
+
+
+,ActualsMonthly AS (
+SELECT
+  Period
+  ,Project_ID
+  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  ,SUM(Amount_Net_CY) AS Amt_Net
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+ Project_ID IN (SELECT NS_Project_ID FROM Base_2)
+ AND Period <= Report_Period
+GROUP BY ALL
+)
+
+,Overages AS (
+SELECT
+  Project_ID
+  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  ,SUM(Amount_Net_CY) AS Amt_Net
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+ Project_ID IN (SELECT NS_Project_ID FROM Base_2)
+ AND REGEXP_CONTAINS(Account,"43120")
+ AND Period <= Report_Period
+GROUP BY ALL
+)
+
+,CommDV360_Monthly AS (
+SELECT 
+  Period
+  ,CASE
+    WHEN REGEXP_CONTAINS(Account,"41117") THEN "41117-DV360"
+    WHEN REGEXP_CONTAINS(Account,"43175") THEN "43175-Commission"
+    ELSE "Error"
+   END AS NS_Project_ID
+  ,R.Customer_ID AS NS_Customer_ID
+  ,R.Customer_Nm
+  ,SUM(Amount_Gross) AS Amt_Gross
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
+WHERE
+  REGEXP_CONTAINS(R.Account,"41117|43175")
+  AND Period >= PY_START
+  AND Period <= Report_Period
+GROUP BY ALL
+)
+
+
+--Step 13 [END] : Get Rev Actuals Data  ------------------------------
+
+--Step 14 [START] : Layer in User Data to Project Data  ------------------------------
+
+,Trended_1 AS (
+SELECT 
+  B.* EXCEPT ( Infer_StartDt,	Infer_EndDt, Contract_Val)
+  ,IFNULL(N.Name,B.project_name) AS Harvest_Nm
+  ,H.Total_Hours
+  ,IFNULL(S.Acct_Owner,A.Account_Owner__c) AS Acct_Owner
+  ,IFNULL(S.Consultants,P.Strategic_Consultant__c) AS Consultants
+  ,IFNULL(S.Opp_Owner,U.Name) AS Opp_Owner
+  
+  ,IFNULL(T.User_Nm,T2.User_Nm) AS TS_Director
+  ,IFNULL(T.Team_Role,T2.Team_Role) AS TS_Director_Role
+  
+  ,IFNULL(Y.User_Nm,Y2.User_Nm) AS Analytics_Director
+  ,IFNULL(Y.Team_Role,Y2.Team_Role) AS Analytics_Director_Role
+
+  ,IFNULL(M.User_Nm,M2.User_Nm) AS Analytics_Manager
+  ,IFNULL(M.Team_Role,M2.Team_Role) AS Manager_Role
+
+  ,D.Timeline Timeline_F
+  ,FORMAT_DATE("%h_%Y",D.Timeline) AS Timeline
+  ,D.Joiner
+
+  ,B.Infer_StartDt
+  ,B.Infer_EndDt
+  ,DATE_DIFF(B.Infer_EndDt, B.Infer_StartDt, MONTH)+1 AS Contract_Term
+  ,DATE_DIFF(B.Infer_EndDt,Report_Period,MONTH) AS Months_Remaining
+  ,B.Contract_Val
+
+FROM BASE_2 B
+LEFT JOIN `adswerve-time-tracking.warehouse.projects` N ON B.NS_Harvest_ID = N.ID
+LEFT JOIN Hours H ON B.NS_Harvest_ID = H.ProjectId
+LEFT JOIN SFdata S ON B.NS_Project_ID = S.ProjectId
+LEFT JOIN `adswerve-sfdc.Warehouse.opportunity` P ON B.NS_Project_ID = P.Opportunity_Safe_ID__c
+  AND B.NS_Harvest_ID IS NULL
+LEFT JOIN `adswerve-sfdc.Warehouse.user` U ON P.OwnerId = U.ID
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON P.AccountId = A.Account_Case_Safe_ID__c
+
+LEFT JOIN TS_Directors T ON S.AccountId = T.Account_Case_Safe_ID
+LEFT JOIN Analytics_Directors Y ON S.AccountId = Y.Account_Case_Safe_ID
+LEFT JOIN Analytics_Manager M ON S.AccountId = M.Account_Case_Safe_ID
+
+LEFT JOIN TS_Directors T2 ON P.AccountId = T2.Account_Case_Safe_ID
+LEFT JOIN Analytics_Directors Y2 ON P.AccountId = Y2.Account_Case_Safe_ID
+LEFT JOIN Analytics_Manager M2 ON P.AccountId = M2.Account_Case_Safe_ID
+CROSS JOIN Periods D
+GROUP BY ALL
+)
+
+--Step 14 [END] : Layer in User Date to Project Data  ------------------------------
+
+--Step 15 [START] : Layer in Actuals to Project Data, Calculate: RevPerMonth  ------------------------------
+
+,Trended_2 AS (
+SELECT
+  T.*
+  ,TA.Amt_Gross AS RevToDate
+  ,CASE
+    WHEN REGEXP_CONTAINS(T.Project_Type,"Commission|DV360") THEN C.Amt_Gross
+    ELSE AM.Amt_Gross
+   END AS Period_Actual
+  ,Y.Amt_Gross AS YTD_Rev
+  ,O.Amt_Gross AS Total_Overages
+  -- ,IF(T.Contract_Val =0,0,T.Contract_Val-TA.Amt_Gross) AS Def_Balance
+  ,CASE
+    WHEN T.IN_SF_NotInNS = "T" THEN T.Contract_Val
+    WHEN T.Contract_Val =0 THEN 0
+    ELSE T.Contract_Val-(IFNULL(TA.Amt_Gross,0)/*RevToDate*/-IFNULL(O.Amt_Gross,0)/*Overaged*/)
+   END AS Def_Balance
+
+FROM Trended_1 T
+LEFT JOIN ActualsTotal TA ON T.NS_Project_ID = TA.Project_ID 
+LEFT JOIN YTD_Rev Y ON T.NS_Project_ID = Y.Project_ID 
+
+LEFT JOIN Overages O ON T.NS_Project_ID = O.Project_ID 
+LEFT JOIN ActualsMonthly AM ON T.NS_Project_ID = AM.Project_ID 
+  AND T.Timeline_F = AM.Period 
+LEFT JOIN CommDV360_Monthly C ON T.NS_Project_ID = C.NS_Project_ID
+  AND T.Timeline_F = C.Period 
+  AND T.NS_Customer_ID = C.NS_Customer_ID
+
+GROUP BY ALL
+)
+
+
+,Trended_3 AS (
+SELECT
+  T.*
+  ,CASE 
+    WHEN T.IN_SF_NotInNS = "T" THEN ROUND(SAFE_DIVIDE(T.Contract_Val,IF(T.Months_Remaining>12,12,T.Months_Remaining)),2)
+    WHEN T.Contract_Val =0 THEN 0   
+    ELSE ROUND(SAFE_DIVIDE(
+                      -- (T.Contract_Val-(IFNULL(T.RevToDate,0)-IFNULL(T.Total_Overages,0)))
+                      T.Def_Balance
+                      -- ,IF(T.Months_Remaining>12,12,T.Months_Remaining)
+                      ,CASE
+                        WHEN T.Months_Remaining>12 THEN 12
+                        
+                        WHEN T.Months_Remaining>0 
+                          AND T.Contract_Term <  T.Months_Remaining THEN T.Contract_Term 
+                      
+                        WHEN DATE_TRUNC(Infer_EndDt,MONTH) =  Report_Period  
+                            AND Infer_EndDt >= Report_Period
+                            AND Def_Balance >0 THEN 1                            
+                        
+                        ELSE T.Months_Remaining
+                       END),2)
+   END AS RevPerMonth
+FROM Trended_2 T
+)
+
+
+
+--Step 15 [END] : Layer in Actuals to Project Data, Calculate: RevPerMonth  ------------------------------
+
+--Step 16 [START] : Put in Logic for RevPerMonth  ------------------------------
+
+,CommAndDV360_Input AS (
+SELECT 
+  *
+  ,CASE
+      WHEN LEFT(Joiner,2) = "PY" THEN CONCAT(PY,"-",FORMAT_DATE('%m', PARSE_DATE('PY_%b', Joiner)),"-","01")
+      WHEN LEFT(Joiner,2) = "CY" THEN CONCAT(CY,"-",FORMAT_DATE('%m', PARSE_DATE('CY_%b', Joiner)),"-","01")
+      WHEN LEFT(Joiner,2) = "NY" THEN CONCAT(NY,"-",FORMAT_DATE('%m', PARSE_DATE('NY_%b', Joiner)),"-","01")
+      ELSE "9999-01-01"
+     END AS Joiner_F
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.CommAndDV360_Input`
+UNPIVOT( Amount FOR Joiner IN (
+        PY_Jan,PY_Feb,PY_Mar,PY_Apr,PY_May,PY_Jun,PY_Jul,PY_Aug,PY_Sep,PY_Oct,PY_Nov,PY_Dec
+        ,CY_Jan,CY_Feb,CY_Mar,CY_Apr,CY_May,CY_Jun,CY_Jul,CY_Aug,CY_Sep,CY_Oct,CY_Nov,CY_Dec
+        ,NY_Jan,NY_Feb,NY_Mar,NY_Apr,NY_May,NY_Jun,NY_Jul,NY_Aug,NY_Sep,NY_Oct,NY_Nov,NY_Dec
+))
+
+WHERE
+  Customer_ID IS NOT NULL
 
 )
 
--- -- --------------------------------------------------------------
-SELECT 
-  B.* 
-FROM Base_2 B
--- -- --------------------------------------------------------------
 
--- ,Hours AS (
--- SELECT
---   --DATE_TRUNC(Date,Month) AS Period
---   NULL AS Period
---   ,IFNULL(ProjectId,"NULL") AS ProjectId
---   ,ProjectName
---   ,SUM(
---     CASE
---       WHEN CONTAINS_SUBSTR(LOWER(client), "adswerve") THEN 0
---       WHEN Billable = "true" THEN Hours   
---       WHEN CONTAINS_SUBSTR(LOWER(TaskName), "fixed") THEN Hours
---       WHEN CONTAINS_SUBSTR(LOWER(ProjectName), "3PCD Masterclass: Privacy Sandbox 6/11") THEN Hours
---       ELSE 0
---     END
---   ) AS Billable_Hours
---   ,ROUND(SUM(Hours),2) AS Total_Hours
---   ,is_Active
--- FROM `adswerve-time-tracking.reporting.reporting_prod` R
--- LEFT JOIN `adswerve-time-tracking.warehouse.projects` P ON R.ProjectId = P.id
--- WHERE
---   EXTRACT(YEAR FROM Date) >= 2021
---   -- AND EXTRACT(MONTH FROM Date) = 3
---   AND REGEXP_CONTAINS(Team,"Technical Services")
---   AND NOT REGEXP_CONTAINS(TeamMember, "Hubbard|Lauritzen")
--- GROUP BY ALL
--- )
-
--- ,Opps AS (
--- SELECT
---   DISTINCT
---   ProjectId
---   ,OpportunityId
--- FROM `adswerve-finance.Fin_Stage.NS_Sales_Orders`
--- WHERE 
---   ProjectId IN (SELECT DISTINCT NS_Project_ID FROM BASE_2)
--- ORDER BY 1
--- )
-
--- ,SFdata AS (
--- SELECT 
---   O.ProjectId
---   ,O.OpportunityId
---   ,P.OwnerId
---   ,U.Name AS Opp_Owner
---   ,P.Strategic_Consultant__c AS Consultants
---   ,P.AccountId
---   ,A.Account_Owner__c AS Acct_Owner
--- FROM Opps O
--- LEFT JOIN `adswerve-sfdc.Warehouse.opportunity` P ON O.OpportunityId = P.Opportunity_Safe_ID__c
--- LEFT JOIN `adswerve-sfdc.Warehouse.user` U ON P.OwnerId = U.ID
--- LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON P.AccountId = A.Account_Case_Safe_ID__c
--- )
-
--- ,TS_Directors AS (
--- SELECT 
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
---   ,E.User_Nm 
---   ,E.Account_Team_Member_ID
---   ,E.Account_Case_Safe_ID
---   ,E.Team_Role
--- FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
--- WHERE
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
---   AND  REGEXP_CONTAINS(Team_Role,"TS Director")
--- )
-
--- ,Analytics_Directors AS (
--- SELECT 
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
---   ,E.User_Nm 
---   ,E.Account_Team_Member_ID
---   ,E.Account_Case_Safe_ID
---   ,E.Team_Role
--- FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
--- WHERE
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
---   AND  REGEXP_CONTAINS(Team_Role,"Analytics Director")
--- )
-
--- ,Analytics_Manager AS (
--- SELECT 
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) AS SnapShot_Date
---   ,E.User_Nm 
---   ,E.Account_Team_Member_ID
---   ,E.Account_Case_Safe_ID
---   ,E.Team_Role
--- FROM `adswerve-finance.Fin_Stage.Stage_SF_EmployeesByAcct__*` E
--- WHERE
---   PARSE_DATE('%Y%m%d',E._TABLE_SUFFIX) = Max_Snapshot
---   AND  REGEXP_CONTAINS(Team_Role,"Analytics Manager")
--- )
-
-
--- SELECT 
---   B.*
---   ,IFNULL(N.Name,B.project_name) AS Harvest_Nm
---   ,H.Total_Hours
---   ,IFNULL(S.Acct_Owner,A.Account_Owner__c) AS Acct_Owner
---   ,IFNULL(S.Consultants,P.Strategic_Consultant__c) AS Consultants
---   ,IFNULL(S.Opp_Owner,U.Name) AS Opp_Owner
+,Trended_4 AS (
+SELECT
+  T.* EXCEPT (RevPerMonth)
+  ,IFNULL(
+  CASE
+    WHEN REGEXP_CONTAINS(T.NS_Project_ID,"Commission|DV360") THEN C.Amount
+        --  AND  T.Timeline_F > Report_Period THEN C.Amount
+    
+    
+    WHEN T.Timeline_F <= Report_Period THEN T.Period_Actual
+    WHEN REGEXP_CONTAINS(T.Project_Type,"DV360|Commissions") THEN C.Amount
+    WHEN REGEXP_CONTAINS(T.Project_Type,"Rate Card") THEN 0
+    WHEN 
+      DATE_TRUNC(T.Infer_EndDT , MONTH) < DATE_ADD(Report_Period,INTERVAL 1 MONTH)
+      AND T.Def_Balance >0
+      AND DATE_ADD(DATE_TRUNC(T.Infer_EndDT, MONTH), INTERVAL 1 MONTH) = T.Timeline_F 
+      THEN T.Def_Balance
+    
+    
+    WHEN T.Timeline_F >= DATE_TRUNC(T.Infer_StartDT, MONTH) 
+      AND T.Timeline_F <= DATE_TRUNC(T.Infer_EndDT , MONTH)
+      AND T.Timeline_F > Report_Period THEN T.RevPerMonth
+    ELSE 0
+  END,0) AS RevPerMonth
+  -- ,Report_Period >= T.Timeline_F
   
---   ,IFNULL(T.User_Nm,T2.User_Nm) AS TS_Director
---   ,IFNULL(T.Team_Role,T2.Team_Role) AS TS_Director_Role
-  
---   ,STRING_AGG(DISTINCT IFNULL(Y.User_Nm,Y2.User_Nm), ', ') AS Analytics_Director
---   ,STRING_AGG(DISTINCT IFNULL(Y.Team_Role,Y2.Team_Role), ', ') AS Analytics_Director_Role
-  
---   ,STRING_AGG(DISTINCT IFNULL(M.User_Nm,M2.User_Nm), ', ') AS Analytics_Manager
---   ,STRING_AGG(DISTINCT IFNULL(M.Team_Role,M2.Team_Role), ', ') AS Manager_Role
+FROM Trended_3 T
+LEFT JOIN CommAndDV360_Input C ON 
+  T.NS_Customer_ID = C.Customer_ID 
+  AND T.Class = C.Class
+  AND T.Joiner = C.Joiner
+GROUP BY ALL
+)
 
 
--- FROM BASE_2 B
--- LEFT JOIN `adswerve-time-tracking.warehouse.projects` N ON B.NS_Harvest_ID = N.ID
--- LEFT JOIN Hours H ON B.NS_Harvest_ID = H.ProjectId
--- LEFT JOIN SFdata S ON B.NS_Project_ID = S.ProjectId
--- LEFT JOIN `adswerve-sfdc.Warehouse.opportunity` P ON B.NS_Project_ID = P.Opportunity_Safe_ID__c
---   AND B.NS_Harvest_ID IS NULL
--- LEFT JOIN `adswerve-sfdc.Warehouse.user` U ON P.OwnerId = U.ID
--- LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON P.AccountId = A.Account_Case_Safe_ID__c
+,Trended_5 AS (
+SELECT
+  * EXCEPT(RevPerMonth)
+  -- ,SUM(T.RevPerMonth) OVER (PARTITION BY NS_Project_ID ORDER BY NS_Project_ID,Timeline_F) AS CumRPM
+  -- ,COUNTIF(T.RevPerMonth<>0 AND Period_Actual IS NULL) OVER (PARTITION BY NS_Project_ID ORDER BY NS_Project_ID,Timeline_F) AS CntRPM
+  ,CASE
+    WHEN REGEXP_CONTAINS(T.NS_Project_ID,"Commission|DV360") THEN RevPerMonth
+    WHEN Period_Actual IS NOT NULL THEN RevPerMonth
+    
+    WHEN Period_Actual IS NULL 
+         AND IF(Months_Remaining>12,12,Months_Remaining)  >= COUNTIF(T.RevPerMonth<>0 AND Period_Actual IS NULL) OVER (PARTITION BY NS_Project_ID ORDER BY NS_Project_ID,Timeline_F) THEN RevPerMonth
+    
+    -- WHEN 
+    --   DATE_TRUNC(T.Infer_EndDT , MONTH) < DATE_ADD(Report_Period,INTERVAL 1 MONTH)
+    --   AND T.Def_Balance >0
+    --   AND DATE_ADD(DATE_TRUNC(T.Infer_EndDT, MONTH), INTERVAL 1 MONTH) = T.Timeline_F 
+    --   THEN T.Def_Balance
+    ELSE 0
+   END AS RevPerMonth
+FROM Trended_4 T
+)
 
--- LEFT JOIN TS_Directors T ON S.AccountId = T.Account_Case_Safe_ID
--- LEFT JOIN Analytics_Directors Y ON S.AccountId = Y.Account_Case_Safe_ID
--- LEFT JOIN Analytics_Manager M ON S.AccountId = M.Account_Case_Safe_ID
 
--- LEFT JOIN TS_Directors T2 ON P.AccountId = T2.Account_Case_Safe_ID
--- LEFT JOIN Analytics_Directors Y2 ON P.AccountId = Y2.Account_Case_Safe_ID
--- LEFT JOIN Analytics_Manager M2 ON P.AccountId = M2.Account_Case_Safe_ID
--- GROUP BY ALL
+
+
+
+--Step 16 [END] : Put in Logive for when RevPerMonth should Populate ------------------------------
+
+SELECT
+  T.* EXCEPT (/*Timeline,*/Timeline_F,Period_Actual,RevPerMonth,Joiner,Contract_Rate)
+  ,ROUND(T.Contract_Rate,2) AS Contract_Rate
+  ,ROUND(T.RevPerMonth,2) AS RevPerMonth
+
+FROM Trended_5 T
+WHERE
+  NS_Project_ID NOT IN ("006Rp00000QdAi6IAF","006Rp00000HqjnGIAR") --3/20/2025
+  AND(
+       NOT(
+          Report_Period > T.Infer_EndDt 
+          AND Currency = "South African Rand"
+        )
+      OR REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+  )
+;
+
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+DROP TABLE ProjectData;
+
+
+
+-- SELECT * FROM Trended_4
+-- WHERE
+--   REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+--   AND NS_Customer_ID = "3944"
+
+
+
+-- SELECT 
+--  NS_Project_ID
+--  ,Customer_Nm
+--  ,Remaining
+--  ,Infer_StartDt
+--  ,Infer_EndDt
+--  ,Contract_Term
+--  ,Months_Remaining
+--  ,Contract_Val
+--  ,RevToDate
+--  ,Period_Actual
+--  ,YTD_Rev
+--  ,Total_Overages
+--  ,Timeline_F
+--  ,Def_Balance
+-- --  ,CumRPM
+-- --  ,CntRPM
+--  ,RevPerMonth
+--  ,Joiner
+-- --  ,DATE_TRUNC(T.Infer_EndDT , MONTH) < DATE_ADD(Report_Period,INTERVAL 1 MONTH)
+-- --       AND T.Def_Balance >0
+-- --       AND DATE_ADD(DATE_TRUNC(T.Infer_EndDT, MONTH), INTERVAL 1 MONTH) = T.Timeline_F 
+
+-- FROM Trended_5  T--Base_2 --NS_Opps --consolidated
+-- WHERE
+--  REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+--   AND NS_Customer_ID = "3944"
+
+-- -- WHERE 
+-- --   REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
+-- -- WHERE
+-- --   NS_Project_ID = "006Rp00000YXeHfIAL"  --"194341"  --"186800" --"197390" --"185073" --"006Rp00000YNTQkIAP"
 -- ORDER BY
---   B.Inactive ASC
-   
+--   NS_Project_ID
+--   ,Customer_nm
+--   ,Timeline_F
+
+
+END;
 
 
 
@@ -788,19 +1188,3 @@ FROM Base_2 B
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
--- ;END;
