@@ -24,51 +24,51 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,Project_Type STRING
     ,Infer_StartDt STRING
     ,Infer_EndDt STRING
-    ,Contract_Rate FLOAT64
-    ,Contract_Val  FLOAT64
+    ,Contract_Rate STRING
+    ,Contract_Val  STRING
     ,RevToDate STRING
-    ,Total_Overages  FLOAT64
-    ,Def_Balance  FLOAT64
-    ,Fcst_Var  FLOAT64 
+    ,Total_Overages  STRING
+    ,Def_Balance  STRING
+    ,Fcst_Var  STRING 
     
-    ,PY_Jan  FLOAT64 
-    ,PY_Feb  FLOAT64 
-    ,PY_Mar  FLOAT64 
-    ,PY_Apr  FLOAT64 
-    ,PY_May  FLOAT64 
-    ,PY_Jun  FLOAT64 
-    ,PY_Jul  FLOAT64 
-    ,PY_Aug  FLOAT64 
-    ,PY_Sep  FLOAT64 
-    ,PY_Oct  FLOAT64 
-    ,PY_Nov  FLOAT64 
-    ,PY_Dec  FLOAT64 
+    ,PY_Jan  STRING 
+    ,PY_Feb  STRING 
+    ,PY_Mar  STRING 
+    ,PY_Apr  STRING 
+    ,PY_May  STRING 
+    ,PY_Jun  STRING 
+    ,PY_Jul  STRING 
+    ,PY_Aug  STRING 
+    ,PY_Sep  STRING 
+    ,PY_Oct  STRING 
+    ,PY_Nov  STRING 
+    ,PY_Dec  STRING 
 
-    ,CY_Jan  FLOAT64 
-    ,CY_Feb  FLOAT64 
-    ,CY_Mar  FLOAT64 
-    ,CY_Apr  FLOAT64 
-    ,CY_May  FLOAT64 
-    ,CY_Jun  FLOAT64 
-    ,CY_Jul  FLOAT64 
-    ,CY_Aug  FLOAT64 
-    ,CY_Sep  FLOAT64 
-    ,CY_Oct  FLOAT64 
-    ,CY_Nov  FLOAT64 
-    ,CY_Dec  FLOAT64 
+    ,CY_Jan  STRING 
+    ,CY_Feb  STRING 
+    ,CY_Mar  STRING 
+    ,CY_Apr  STRING 
+    ,CY_May  STRING 
+    ,CY_Jun  STRING 
+    ,CY_Jul  STRING 
+    ,CY_Aug  STRING 
+    ,CY_Sep  STRING 
+    ,CY_Oct  STRING 
+    ,CY_Nov  STRING 
+    ,CY_Dec  STRING 
     
-    ,NY_Jan  FLOAT64 
-    ,NY_Feb  FLOAT64 
-    ,NY_Mar  FLOAT64 
-    ,NY_Apr  FLOAT64 
-    ,NY_May  FLOAT64 
-    ,NY_Jun  FLOAT64 
-    ,NY_Jul  FLOAT64 
-    ,NY_Aug  FLOAT64 
-    ,NY_Sep  FLOAT64 
-    ,NY_Oct  FLOAT64 
-    ,NY_Nov  FLOAT64 
-    ,NY_Dec  FLOAT64 
+    ,NY_Jan  STRING 
+    ,NY_Feb  STRING 
+    ,NY_Mar  STRING 
+    ,NY_Apr  STRING 
+    ,NY_May  STRING 
+    ,NY_Jun  STRING 
+    ,NY_Jul  STRING 
+    ,NY_Aug  STRING 
+    ,NY_Sep  STRING 
+    ,NY_Oct  STRING 
+    ,NY_Nov  STRING 
+    ,NY_Dec  STRING 
 
 
 	
