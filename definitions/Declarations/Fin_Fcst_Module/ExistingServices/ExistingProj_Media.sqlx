@@ -41,36 +41,36 @@ SET SQL1 = CONCAT(
               ,Project_Type
               ,PARSE_DATE('%m/%d/%Y', Infer_StartDt) AS Infer_StartDt
               ,PARSE_DATE('%m/%d/%Y', Infer_EndDt) AS Infer_EndDt
-              ,Contract_Rate
-              ,Contract_Val
-              ,RevToDate
-              ,Total_Overages
-              ,Def_Balance
+              ,CAST(Contract_Rate AS FLOAT64) AS Contract_Rate
+              ,CAST(Contract_Val AS FLOAT64) AS Contract_Val
+              ,CAST(RevToDate AS FLOAT64) AS RevToDate
+              ,CAST(Total_Overages AS FLOAT64) AS Total_Overages
+              ,CAST(Def_Balance AS FLOAT64) AS Def_Balance
               ,ROUND(Fcst_Var,2) AS Fcst_Var
-              ,CY_Jan 
-              ,CY_Feb 
-              ,CY_Mar 
-              ,CY_Apr 
-              ,CY_May 
-              ,CY_Jun 
-              ,CY_Jul 
-              ,CY_Aug 
-              ,CY_Sep 
-              ,CY_Oct 
-              ,CY_Nov 
-              ,CY_Dec 
-              ,NY_Jan 
-              ,NY_Feb 
-              ,NY_Mar 
-              ,NY_Apr 
-              ,NY_May 
-              ,NY_Jun 
-              ,NY_Jul 
-              ,NY_Aug 
-              ,NY_Sep 
-              ,NY_Oct 
-              ,NY_Nov 
-              ,NY_Dec
+              ,CAST(CY_Jan AS FLOAT64) AS CY_Jan
+              ,CAST(CY_Feb AS FLOAT64) AS CY_Feb 
+              ,CAST(CY_Mar AS FLOAT64) AS CY_Mar
+              ,CAST(CY_Apr AS FLOAT64) AS CY_Apr 
+              ,CAST(CY_May AS FLOAT64) AS CY_May
+              ,CAST(CY_Jun AS FLOAT64) AS CY_Jun
+              ,CAST(CY_Jul AS FLOAT64) AS CY_Jul
+              ,CAST(CY_Aug AS FLOAT64) AS CY_Aug 
+              ,CAST(CY_Sep AS FLOAT64) AS CY_Sep 
+              ,CAST(CY_Oct AS FLOAT64) AS CY_Oct 
+              ,CAST(CY_Nov AS FLOAT64) AS CY_Nov 
+              ,CAST(CY_Dec AS FLOAT64) AS CY_Dec
+              ,CAST(NY_Jan AS FLOAT64) AS NY_Jan
+              ,CAST(NY_Feb AS FLOAT64) AS NY_Feb 
+              ,CAST(NY_Mar AS FLOAT64) AS NY_Mar
+              ,CAST(NY_Apr AS FLOAT64) AS NY_Apr 
+              ,CAST(NY_May AS FLOAT64) AS NY_May
+              ,CAST(NY_Jun AS FLOAT64) AS NY_Jun
+              ,CAST(NY_Jul AS FLOAT64) AS NY_Jul
+              ,CAST(NY_Aug AS FLOAT64) AS NY_Aug 
+              ,CAST(NY_Sep AS FLOAT64) AS NY_Sep 
+              ,CAST(NY_Oct AS FLOAT64) AS NY_Oct 
+              ,CAST(NY_Nov AS FLOAT64) AS NY_Nov 
+              ,CAST(NY_Dec AS FLOAT64) AS NY_Dec
               ,Fcst_Class 
 
               
