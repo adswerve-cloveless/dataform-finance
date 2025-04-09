@@ -2,14 +2,14 @@ config {
   type: "table",
   database: "adswerve-finance-reporting",
   schema: "Fin_Fcst_Module",
-  name: "Stage_ExistingServFcst"
+  name: "StageFcst_ExistingServ_Model"
 }
 
 
-CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_ExistingServFcst` 
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.StageFcst_ExistingServ_Model` 
 (
     Division STRING
-    ,Rpt_DT DATE
+    ,Rpt_DT STRING
     ,Customer_Nm STRING
     ,Harvest_Nm STRING
     ,Harvest_ID STRING
@@ -65,7 +65,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
 OPTIONS (
   format = 'GOOGLE_SHEETS'
   ,uris =  ['https://docs.google.com/spreadsheets/d/1grwgGtomD70eWyWD1AFbyPRe0mbpzNNgfMjld8vvghQ'] --Update as needed
-  ,sheet_range = 'Operations Fcst'  --Sheet Name
+  ,sheet_range = 'ProjectData - Condensed'  --Sheet Name
   ,skip_leading_rows = 1
   -- ,header = 1
 )
