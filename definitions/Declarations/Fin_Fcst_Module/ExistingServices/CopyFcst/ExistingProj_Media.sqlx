@@ -37,6 +37,7 @@ SET SQL1 = CONCAT(
               ,Inactive
               ,Product__c
               ,G_Funded
+              ,Fcst_Class   
               ,MRK_Vs_AGY
               ,Project_Type             
 
@@ -100,7 +101,6 @@ SET SQL1 = CONCAT(
               
               ,CAST(REPLACE(IF(LEFT(NY_Dec, 1) = '(', '-' || SUBSTR(NY_Dec, 2, LENGTH(NY_Dec) - 2), IF(NY_Dec = '-', '0', NY_Dec)), ',', '') AS FLOAT64) AS NY_Dec
 
-              ,Fcst_Class           
               
               FROM  `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Media`;''');
 
