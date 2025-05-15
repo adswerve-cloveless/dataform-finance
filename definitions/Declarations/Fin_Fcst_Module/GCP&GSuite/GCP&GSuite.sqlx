@@ -1,11 +1,12 @@
-CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPandGSuite`()
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPandGSuite`(Report_Period DATE)
 BEGIN
 
-DECLARE Report_Period, PY_Start, NY_END DATE;
+-- DECLARE Report_Period DATE:
+DECLARE PY_Start, NY_END DATE;
 DECLARE TimePeriod, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2 STRING;
 
 
-SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
+-- SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
 SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
 SET NY_END = DATE(EXTRACT(YEAR FROM Report_Period)+1,12,1);
 
