@@ -1,0 +1,219 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPandGSuite`()
+BEGIN
+
+DECLARE Report_Period, PY_Start, NY_END DATE;
+DECLARE TimePeriod, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2 STRING;
+
+
+SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
+SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
+SET NY_END = DATE(EXTRACT(YEAR FROM Report_Period)+1,12,1);
+
+SET TimePeriod =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(PY_Start AS DATE) 
+                                        ,DATE_ADD(CAST(PY_Start AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+
+---------------------------------------------------------------------------------------------------------
+SET SQL1 = '''
+
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Platforms_GCPandGSuite` AS
+SELECT 
+  PARSE_DATE("%b_%Y", G.Period_F) AS Period
+  ,G.*
+FROM GCPandGSuite G
+''';
+---------------------------------------------------------------------------------------------------------
+SET SQL2 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Platforms_GCPandGSuite_Pvt` AS
+SELECT 
+  *
+FROM GCPandGSuite G
+PIVOT(SUM(IFNULL(FcstAmt,0)) FOR Period_F IN (''' || TimePeriod || '''))
+''';
+---------------------------------------------------------------------------------------------------------
+
+
+
+CREATE OR REPLACE TEMP TABLE GCPandGSuite AS
+
+WITH Periods AS(
+SELECT 
+    Period 
+FROM UNNEST(
+    GENERATE_DATE_ARRAY(PY_Start, NY_END, INTERVAL  1 MONTH)) AS Period
+)
+
+
+,Parents AS (
+SELECT
+  DISTINCT
+  Parent_Nm
+  ,Parent_ID
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+  EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
+  AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
+  AND Parent_Nm <> ""
+  AND Parent_Nm IS NOT NULL
+)
+
+
+,Products AS(
+SELECT "GCP Revenue" AS MvA_LineItem
+UNION ALL
+SELECT "GSuite Revenue" AS MvA_LineItem
+
+)
+
+
+
+-- SELECT TimePeriod
+
+,Actuals AS (
+SELECT
+  Period
+  ,Parent_Nm
+  ,Parent_ID
+  ,MvA_LineItem AS LineItem
+  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  -- ,SUM(Amount_Net_CY) AS Amt_Net
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+  EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
+  AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
+  AND Parent_Nm <> ""
+  AND Parent_Nm IS NOT NULL
+  AND Period <= Report_Period
+GROUP BY ALL
+ORDER BY
+  Parent_Nm
+)
+
+,Joiner AS(
+SELECT
+  P.Period
+  ,PA.Parent_Nm
+  ,PA.Parent_ID
+  ,PR.MvA_LineItem AS LineItem
+FROM Periods P
+CROSS JOIN Parents PA
+CROSS JOIN Products PR
+)
+
+
+,LastMonth AS (
+SELECT
+  Period
+  ,Parent_Nm
+  ,Parent_ID
+  ,LineItem
+  ,Amt_Gross
+FROM Actuals 
+WHERE
+ Period = Report_Period
+)
+
+,Agg AS (
+SELECT 
+  J.Period
+  ,FORMAT_DATE("%b_%Y",J.Period) AS Period_F
+  ,J.Parent_Nm
+  ,J.Parent_ID
+  ,J.LineItem
+  ,IFNULL(A.Amt_Gross,0) AS Amt_Gross
+FROM Joiner J
+LEFT JOIN Actuals A ON J.Period = A.Period
+  AND J.Parent_ID = A.Parent_ID
+  AND J.LineItem = A.LineItem
+
+ORDER BY 
+  J.Parent_Nm
+  ,J.LineItem
+  ,J.Period
+)
+
+,AvgCalc AS (
+SELECT 
+  A.Period
+  ,A.Period_F
+  ,A.Parent_Nm
+  ,A.Parent_ID
+  ,A.LineItem
+  ,A.Amt_Gross
+  ,ROUND(AVG(A.Amt_Gross) OVER (  
+      PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
+      ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+  ),2) AS Avg_3M
+  ,ROUND(AVG(A.Amt_Gross) OVER (  
+      PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
+      ROWS BETWEEN 5 PRECEDING AND CURRENT ROW
+  ),2) AS Avg_6M
+FROM Agg A
+)
+
+,Trended AS (
+SELECT 
+ C.Period
+  ,C.Period_F
+  ,C.Parent_Nm
+  ,C.Parent_ID
+  ,C.LineItem
+  ,IFNULL(C.Amt_Gross,0) AS Amt_Gross
+  ,IFNULL(C.Avg_3M,0) AS Amt_Gross
+  ,IFNULL(C.Avg_6M,0) AS Avg_6M
+FROM AvgCalc C
+WHERE
+  C.Period = Report_Period
+)
+
+
+SELECT
+  -- A.Period
+  -- ,
+  A.Period_F
+  ,A.Parent_Nm
+  ,A.Parent_ID
+  ,A.LineItem
+  ,A.Amt_Gross AS Gross_Actual
+  ,CASE
+    WHEN A.Period <= Report_Period THEN A.Amt_Gross
+    WHEN A.Period > Report_Period THEN
+      CASE
+        WHEN A.LineItem = "GCP Revenue" THEN T.Avg_3M
+        WHEN A.LineItem = "GSuite Revenue" THEN T.Avg_3M
+        ELSE 0.99
+      END
+    -- ELSE 0.99
+   END AS FcstAmt
+FROM Agg A
+LEFT JOIN Trended T ON A.Parent_ID = T.Parent_ID
+  AND A.LineItem = T.LineItem
+-- WHERE
+--  REGEXP_CONTAINS(A.Parent_Nm,"Auto")
+  -- A.Parent_ID = "4610"
+  -- AND A.LineItem = "GCP Revenue"
+ORDER BY 
+  A.Parent_Nm
+  ,A.LineItem
+  ,A.Period
+
+;
+
+
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+
+END;
+
+
