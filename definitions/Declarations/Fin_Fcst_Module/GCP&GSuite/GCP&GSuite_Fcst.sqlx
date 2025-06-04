@@ -1,0 +1,34 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "Fcst_GCPandGSuite"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.Fcst_GCPandGSuite`()
+BEGIN
+
+
+DECLARE SQL1 STRING;
+DECLARE Table_Nm STRING;
+
+
+SET Table_Nm = CONCAT(
+                      "adswerve-finance-reporting.Fin_Fcst_Module.Fcst_GCPandGSuite"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+
+SET SQL1 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              Table_Nm,
+              ''' AS SELECT 
+              *
+              
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.Stage_GCPandGSuite`;''');
+
+
+EXECUTE IMMEDIATE SQL1;
+
+
+
+END;
