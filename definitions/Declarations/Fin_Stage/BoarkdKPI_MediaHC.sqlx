@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_DataSources",
+  name: "BoarkdKPI_MediaHC"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_DataSources.BoarkdKPI_MediaHC` 
+(
+    Period DATE
+    ,Marketer  FLOAT64
+    ,Agency  FLOAT64
+    ,Support  FLOAT64
+    ,MediaServicesMgmt  FLOAT64
+    ,Total FLOAT64
+    
+
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1iyYGxzCZ87eAPmaricDLCCvVUthy_ePLTDzE0ZJeJrc'] --Update as needed
+  ,sheet_range = 'R&P Upload - Media Pods HC!B7:G30'  --Sheet Name
+  ,skip_leading_rows = 0
+  --,header = 0
+)
