@@ -1,0 +1,363 @@
+
+DECLARE MaxReportDt,MaxReportDt_PY, CY_Start, PY_Start  DATE;
+SET MaxReportDt = `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`();
+SET MaxReportDt_PY = DATE_SUB(MaxReportDt, INTERVAL 1 YEAR);
+SET CY_Start = DATE(EXTRACT(YEAR FROM MaxReportDt),1,1);
+SET PY_Start = DATE_SUB(CY_Start, INTERVAL 1 YEAR);
+ 
+
+CREATE OR REPLACE TABLE adswerve-finance-reporting.Fin_Looker.BI_MediaPodsKpi AS 
+
+WITH BASE AS (
+SELECT
+  scenario,
+  date AS Period,
+  revenue_segment,
+  account_category,
+  account_type,
+  department,
+  IF(REGEXP_CONTAINS(internal_income_statement, 'Direct Labor|Payroll Expense|Options Expense'),"Labor Cost", NULL) as labor_cost,
+  IF(REGEXP_CONTAINS(class, 'EBITDA'),"TRUE", NULL) as edbita,
+  SUM(amount) as amount,
+FROM
+  `adswerve-finance.reporting_data.income_statement_with_current_forecast`
+WHERE 
+  date > '2020-12-31'
+GROUP BY ALL
+)
+
+,NetRev_AgyMrk AS (
+SELECT 
+  Period 
+  ,Scenario
+  ,CASE 
+    WHEN account_category LIKE "%Agency%" THEN "Agency"
+    WHEN account_category LIKE "%Marketer%" THEN "Marketer"
+    ELSE "Other"
+   END AS MrkAgy
+  ,SUM(amount) as amount
+FROM BASE B
+WHERE
+  revenue_segment = "Media"
+
+GROUP BY ALL
+ORDER BY 
+  Period DESC
+)
+
+,NetRev_Total AS (
+SELECT 
+  Period 
+  ,Scenario
+  ,"Total" AS MrkAgy
+  ,SUM(amount) as amount
+
+FROM BASE B
+WHERE
+  revenue_segment = "Media"
+GROUP BY ALL
+ORDER BY 
+  Period DESC
+)
+
+
+,Agg AS (
+SELECT * FROM NetRev_AgyMrk
+UNION ALL
+SELECT * FROM NetRev_Total
+)
+
+
+,Formatted AS (
+SELECT 
+  R.Period
+  ,IF(R.Scenario="Actual","Actual","Fcst") AS Scenario
+  ,R.MrkAgy
+  ,R.Amount AS NetRevenue
+  ,H.Marketer
+  ,H.Agency
+  ,H.MediaServicesMgmt
+  ,H.Support
+  ,H.Total
+  ,ROUND(SAFE_DIVIDE(R.Amount, H.Marketer),2) AS Mrk_RevPerHC
+  ,ROUND(SAFE_DIVIDE(R.Amount, H.Agency),2) AS Agy_RevPerHC
+  ,ROUND(SAFE_DIVIDE(R.Amount, H.MediaServicesMgmt),2) AS MediaSrvMgmt_RevPerHC
+  ,ROUND(SAFE_DIVIDE(R.Amount, H.Support),2) AS Support_RevPerHC
+  ,ROUND(SAFE_DIVIDE(R.Amount, H.Total),2) AS Total_RevPerHC
+FROM Agg R
+LEFT JOIN `adswerve-finance-reporting.Fin_DataSources.BoarkdKPI_MediaHC` H ON R.Period = H.Period
+WHERE
+ MrkAgy IN ("Agency","Marketer","Total")
+ AND EXTRACT(YEAR FROM R.Period) >= 2024
+ORDER BY 
+  Period DESC
+)
+
+--------------------------------------------------------------------
+,Agency_MTD AS (
+SELECT 
+  MaxReportDt AS Period
+  ,"Agency" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Agy_RevPerHC AS RevPerHC
+  ,F.Agency AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period = MaxReportDt
+  AND MrkAgy = "Agency"
+)
+
+,Agency_MTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Agency" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Agy_RevPerHC AS RevPerHC
+  ,F.Agency AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period =MaxReportDt_PY
+  AND MrkAgy = "Agency"
+)
+
+,Agency_YTD AS (
+SELECT 
+   MaxReportDt AS Period
+  ,"Agency" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Agy_RevPerHC),2) AS RevPerHC
+  ,Avg(F.Agency) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN CY_Start AND MaxReportDt
+  AND MrkAgy = "Agency"
+GROUP BY ALL 
+)
+
+,Agency_YTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Agency" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Agy_RevPerHC),2) AS RevPerHC
+  ,Avg(F.Agency) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN PY_Start AND MaxReportDt_PY
+  AND MrkAgy = "Agency"
+GROUP BY ALL 
+)
+------------------------------------------------------------------------
+,Marketer_MTD AS (
+SELECT 
+  MaxReportDt AS Period
+  ,"Marketer" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Mrk_RevPerHC AS RevPerHC
+  ,F.Marketer AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period = MaxReportDt
+  AND MrkAgy = "Marketer"
+)
+
+,Marketer_MTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Marketer" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Mrk_RevPerHC AS RevPerHC
+  ,F.Marketer AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period =MaxReportDt_PY
+  AND MrkAgy = "Marketer"
+)
+
+,Marketer_YTD AS (
+SELECT 
+   MaxReportDt AS Period
+  ,"Marketer" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Mrk_RevPerHC),2) AS RevPerHC
+  ,AVG(F.Marketer) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN CY_Start AND MaxReportDt
+  AND MrkAgy = "Marketer"
+GROUP BY ALL 
+)
+
+,Marketer_YTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Marketer" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Mrk_RevPerHC),2) AS RevPerHC
+  ,AVG(F.Marketer) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN PY_Start AND MaxReportDt_PY
+  AND MrkAgy = "Marketer"
+GROUP BY ALL 
+)
+----------------------------------------------------------
+,Support_MTD AS (
+SELECT 
+  MaxReportDt AS Period
+  ,"Support" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Support_RevPerHC AS RevPerHC
+  ,F.Support AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period = MaxReportDt
+  AND MrkAgy = "Total"
+)
+
+,Support_MTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Support" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.Support_RevPerHC AS RevPerHC
+  ,F.Support AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period =MaxReportDt_PY
+  AND MrkAgy = "Total"
+)
+
+,Support_YTD AS (
+SELECT 
+   MaxReportDt AS Period
+  ,"Support" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Support_RevPerHC),2) AS RevPerHC
+  ,AVG(F.Support) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN CY_Start AND MaxReportDt
+  AND MrkAgy = "Total"
+GROUP BY ALL 
+)
+
+,Support_YTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"Support" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.Support_RevPerHC),2) AS RevPerHC
+  ,AVG(F.Support) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN PY_Start AND MaxReportDt_PY
+  AND MrkAgy = "Total"
+GROUP BY ALL 
+)
+----------------------------------------------------------
+,MediaSrv_MTD AS (
+SELECT 
+  MaxReportDt AS Period
+  ,"MediaSrv" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.MediaSrvMgmt_RevPerHC AS RevPerHC
+  ,F.MediaServicesMgmt AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period = MaxReportDt
+  AND MrkAgy = "Total"
+)
+
+,MediaSrv_MTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"MediaSrv" AS Pod
+  ,"MTD" AS TimePeriod
+  ,F.MediaSrvMgmt_RevPerHC AS RevPerHC
+  ,F.MediaServicesMgmt AS HC
+  ,F.NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period =MaxReportDt_PY
+  AND MrkAgy = "Total"
+)
+
+,MediaSrv_YTD AS (
+SELECT 
+   MaxReportDt AS Period
+  ,"MediaSrv" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.MediaSrvMgmt_RevPerHC),2) AS RevPerHC
+  ,AVG(F.MediaServicesMgmt) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN CY_Start AND MaxReportDt
+  AND MrkAgy = "Total"
+GROUP BY ALL 
+)
+
+,MediaSrv_YTD_PY AS (
+SELECT 
+  MaxReportDt_PY AS Period
+  ,"MediaSrv" AS Pod
+  ,"YTD" AS TimePeriod
+  ,ROUND(AVG(F.MediaSrvMgmt_RevPerHC),2) AS RevPerHC
+  ,AVG(F.MediaServicesMgmt) AS HC
+  ,AVG(F.NetRevenue) AS NetRevenue
+FROM Formatted F
+WHERE 
+  F.Period BETWEEN PY_Start AND MaxReportDt_PY
+  AND MrkAgy = "Total"
+GROUP BY ALL 
+)
+----------------------------------------------------------
+SELECT * FROM Agency_MTD
+UNION ALL 
+SELECT * FROM Agency_MTD_PY
+UNION ALL
+SELECT * FROM Agency_YTD
+UNION ALL
+SELECT * FROM Agency_YTD_PY
+-- ----------------------------------------------------------
+UNION ALL
+SELECT * FROM Marketer_MTD
+UNION ALL 
+SELECT * FROM Marketer_MTD_PY
+UNION ALL
+SELECT * FROM Marketer_YTD
+UNION ALL
+SELECT * FROM Marketer_YTD_PY
+----------------------------------------------------------
+UNION ALL
+SELECT * FROM Support_MTD
+UNION ALL 
+SELECT * FROM Support_MTD_PY
+UNION ALL
+SELECT * FROM Support_YTD
+UNION ALL
+SELECT * FROM Support_YTD_PY
+----------------------------------------------------------
+UNION ALL
+SELECT * FROM MediaSrv_MTD
+UNION ALL 
+SELECT * FROM MediaSrv_MTD_PY
+UNION ALL
+SELECT * FROM MediaSrv_YTD
+UNION ALL
+SELECT * FROM MediaSrv_YTD_PY
+
