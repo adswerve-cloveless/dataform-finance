@@ -21,6 +21,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,Inactive STRING
     ,Product__c STRING
     ,G_Funded STRING
+    ,Fcst_Class STRING
     ,MRK_Vs_AGY STRING
     ,Project_Type STRING
     ,Infer_StartDt DATE
@@ -55,8 +56,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,NY_Oct FLOAT64
     ,NY_Nov FLOAT64
     ,NY_Dec FLOAT64
-    ,Fcst_Class STRING
- 
+
 
 
 	
