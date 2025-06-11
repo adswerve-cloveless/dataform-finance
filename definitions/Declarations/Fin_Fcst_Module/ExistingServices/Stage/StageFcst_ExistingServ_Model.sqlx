@@ -8,29 +8,24 @@ config {
 
 CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.StageFcst_ExistingServ_Model` 
 (
-    Division STRING
-    ,Rpt_DT STRING
+    NS_Project_ID STRING
     ,Customer_Nm STRING
-    ,Harvest_Nm STRING
-    ,Harvest_ID STRING
-    ,Project_ID STRING
-    ,Analytics_Director STRING
-    ,Analytics_Manager STRING
-    ,Consultants STRING
-    ,Acct_Owner STRING
-    ,Inactive STRING
+    ,Project_name STRING
     ,Product__c STRING
+    ,Class STRING
     ,G_Funded STRING
     ,MRK_Vs_AGY STRING
     ,Project_Type STRING
+    ,Inactive STRING
+    ,Fcst_Class STRING
     ,Infer_StartDt DATE
     ,Infer_EndDt DATE
-    ,Contract_Rate STRING
-    ,Contract_Val STRING
-    ,RevToDate STRING
-    ,Total_Overages STRING
-    ,Def_Balance STRING
-    ,Fcst_Var STRING
+    ,Contract_Rate FLOAT64
+    ,Contract_Val FLOAT64
+    ,RevToDate FLOAT64
+    ,Total_Overages FLOAT64
+    ,Def_Balance FLOAT64
+    ,YTD_Rev FLOAT64
     ,CY_Jan FLOAT64
     ,CY_Feb FLOAT64
     ,CY_Mar FLOAT64
@@ -55,7 +50,11 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,NY_Oct FLOAT64
     ,NY_Nov FLOAT64
     ,NY_Dec FLOAT64
-    ,Fcst_Class STRING
+    ,T12Total FLOAT64
+    ,T24Total FLOAT64
+    ,TotalFcst FLOAT64
+    ,Fcst_Var FLOAT64
+
  
 
 
