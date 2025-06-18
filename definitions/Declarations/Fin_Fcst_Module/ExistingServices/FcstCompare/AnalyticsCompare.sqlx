@@ -1,0 +1,71 @@
+
+DECLARE Fcst_Tbl_Nm STRING;
+DECLARE CompareField STRING;
+DECLARE Rpt_Period DATE;
+
+
+SET Fcst_Tbl_Nm = "";
+SET Rpt_Period = "2025-05-01";
+
+
+
+
+WITH ProjectList AS(
+SELECT 
+  DISTINCT
+  NS_Project_ID
+FROM `adswerve-finance.Fin_DataSources.Services_ExistingProjects` 
+WHERE
+  --EXTRACT(YEAR FROM CAST(NS_EndDt AS DATE) ) >=@CY --@PY--@CY
+  CAST(NS_EndDt AS DATE) >= DATE_SUB(/*@CY_START*/"2025-01-01", INTERVAL 2 MONTH)
+)
+
+,BASE AS (
+SELECT 
+  R.*
+  ,CASE 
+        WHEN Class = "" OR Class IS NULL THEN "Unknown"
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Media") THEN "Product : Media" /*Media*/
+        WHEN REGEXP_CONTAINS(MvA_LineItem,"Analytics Services") THEN "Product : Analytics" /*Analytics*/
+        ELSE "Error"
+      END AS Fcst_Class
+  ,C.google_funded
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
+WHERE
+  R.Period <= "2025-05-1"
+  AND EXTRACT(YEAR FROM R.Period) > 2022
+  AND REGEXP_CONTAINS(R.Account,"43130|42115|43140|43150|43120|42135|43175|41117") 
+)
+
+
+,Actuals AS (
+SELECT
+  Parent_Nm
+  ,Customer_Nm
+  ,Parent_ID
+  ,Customer_ID
+  ,Project_ID
+  ,SUM(Amount_Gross) AS Amount_Gross
+FROM BASE
+WHERE 
+  Period = "2025-05-01"
+GROUP BY ALL
+)
+
+SELECT 
+  F.Customer_Nm
+  ,F.Harvest_Nm
+  ,F.Harvest_ID
+  ,F.Project_ID
+  ,F.CY_May AS May_2025_Fcst
+  ,IFNULL(A.Amount_Gross,0) AS May_2025_Actual
+  ,IFNULL(A.Amount_Gross,0)-F.CY_May AS Var
+FROM adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_Analytics_20250512 F
+LEFT JOIN Actuals A ON F.Project_ID = A.Project_ID
+WHERE
+  F.Customer_NM IS NOT NULL
