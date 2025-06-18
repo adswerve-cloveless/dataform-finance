@@ -1,0 +1,43 @@
+
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.NewBizFcst_Recall`(Table_Nm STRING, Rpt_Period DATE)
+BEGIN
+--`adswerve-finance-reporting.Fin_Fcst_Module.NewBizFcst_Recall`
+
+-- DECLARE Rpt_Period DATE;
+-- DECLARE Table_Nm STRING;
+
+DECLARE TimePeriod1, SQL1 STRING;
+
+
+-- SET Rpt_Period = "2025-05-01";
+-- SET Table_Nm = "`adswerve-finance.Fin_Stage.NewBizProjectsP1_Net_20250512`";
+
+SET TimePeriod1 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(Rpt_Period AS DATE) 
+                                        ,DATE_ADD(CAST(Rpt_Period AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+
+SET SQL1 = FORMAT("""
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.NewBizFcst_Recall` AS 
+SELECT 
+  PARSE_DATE('%%Y%%m%%d', REGEXP_EXTRACT('%s', r'(\\d{8})`$')) AS Fcst_Dt
+  ,*
+FROM %s
+PIVOT(SUM(IFNULL(RevPerMonth_Net,0)) FOR Timeline IN (%s))
+""", Table_Nm, Table_Nm, TimePeriod1);
+
+-- Execute
+EXECUTE IMMEDIATE SQL1;
+
+END;
