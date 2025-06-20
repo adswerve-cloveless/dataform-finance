@@ -1,23 +1,91 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_FcstCompare_Analytics`(Rpt_Period DATE)
+BEGIN
 
-DECLARE Fcst_Tbl_Nm STRING;
-DECLARE CompareField STRING;
-DECLARE Rpt_Period DATE;
+DECLARE Fcst_Tbl_Nm, SQL1 STRING;
+DECLARE Fcst_Values, Act_Values, Var_Field_Nm, Act_Field_Nm, Fcst_Field_Nm STRING;
 
+-- DECLARE Rpt_Period DATE;
+-- SET Rpt_Period = "2025-05-01";
 
-SET Fcst_Tbl_Nm = "";
-SET Rpt_Period = "2025-05-01";
+SET Fcst_Values = CONCAT(FORMAT_DATE('F.CY_%b',Rpt_Period));
 
+SET Act_Field_Nm = FORMAT_DATE('%b_Act',Rpt_Period);
+SET Fcst_Field_Nm = FORMAT_DATE('%b_Fcst',Rpt_Period);
+SET Var_Field_Nm = FORMAT_DATE('%b_Var',Rpt_Period);
 
+---------------------------------------------------------------------------------------------------------------------------
+SET Fcst_Tbl_Nm = (
+WITH TableList AS (
+SELECT 
+  table_name
+  ,CAST(REGEXP_EXTRACT(table_name, '(\\d+)$') AS INT64) AS Extracted_nbr
+  ,PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$'))) AS Fcst_DT
+  ,EXTRACT(MONTH FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) AS MONTH
+  ,EXTRACT(YEAR FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) AS YEAR
+FROM adswerve-finance-reporting.Fin_Fcst_Module.INFORMATION_SCHEMA.TABLES
+WHERE
+  REGEXP_CONTAINS(table_name,"ExistingProjs_Analytics_")
+  AND EXTRACT(MONTH FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) = EXTRACT(MONTH FROM Rpt_Period) 
+ORDER BY 
+  Extracted_nbr DESC
+)
 
+,MaxNbr AS (
+SELECT
+  MAX(Extracted_nbr) AS Extracted_nbr
+FROM TableList
+)
 
+SELECT
+  CONCAT("`adswerve-finance-reporting.Fin_Fcst_Module.",T.table_name,"`") AS table_name
+FROM TableList T
+WHERE
+  T.Extracted_nbr = (SELECT Extracted_nbr FROM MaxNbr)
+);
+---------------------------------------------------------------------------------------------------------------------------
+SET SQL1 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_FcstCompare_Analytics` AS 
+SELECT 
+  F.Customer_Nm	Harvest_Nm	
+  ,F.Harvest_ID	
+  ,F.Project_ID
+  -- ,Analytics_Director
+  -- ,Analytics_Manager
+  -- ,Consultants
+  -- ,Acct_Owner
+  -- ,Inactive
+  ,F.Product__c
+  ,F.G_Funded
+  ,F.Fcst_Class	
+  ,F.MRK_Vs_AGY
+  ,F.Project_Type
+  ,F.Infer_StartDt
+  ,F.Infer_EndDt
+  ,F.Contract_Rate
+  ,F.Contract_Val
+  -- ,RevToDate
+  -- ,Total_Overages
+  -- ,Def_Balance
+  -- ,Fcst_Var
+  ,IFNULL(C.Amount_Gross,0) AS ''' || Act_Field_Nm || '''
+  ,''' || Fcst_Values || ''' AS ''' || Fcst_Field_Nm || '''
+  ,IFNULL(C.Amount_Gross,0) - ''' || Fcst_Values || ''' AS ''' || Var_Field_Nm || '''
+
+FROM ''' || Fcst_Tbl_Nm || ''' F 
+LEFT JOIN Compare_Actuals C ON F.Project_ID = C.Project_ID
+WHERE
+ F.Project_ID IS NOT NULL
+''';
+---------------------------------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE TEMP TABLE Compare_Actuals AS (
 WITH ProjectList AS(
 SELECT 
   DISTINCT
   NS_Project_ID
 FROM `adswerve-finance.Fin_DataSources.Services_ExistingProjects` 
 WHERE
-  --EXTRACT(YEAR FROM CAST(NS_EndDt AS DATE) ) >=@CY --@PY--@CY
-  CAST(NS_EndDt AS DATE) >= DATE_SUB(/*@CY_START*/"2025-01-01", INTERVAL 2 MONTH)
+  CAST(NS_EndDt AS DATE) >= DATE_SUB(Rpt_Period, INTERVAL 2 MONTH)
 )
 
 ,BASE AS (
@@ -37,13 +105,12 @@ SELECT
 FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
 LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
-  R.Period <= "2025-05-1"
+  R.Period <= Rpt_Period
   AND EXTRACT(YEAR FROM R.Period) > 2022
   AND REGEXP_CONTAINS(R.Account,"43130|42115|43140|43150|43120|42135|43175|41117") 
+  AND Project_ID IS NOT NULL
 )
 
-
-,Actuals AS (
 SELECT
   Parent_Nm
   ,Customer_Nm
@@ -53,19 +120,12 @@ SELECT
   ,SUM(Amount_Gross) AS Amount_Gross
 FROM BASE
 WHERE 
-  Period = "2025-05-01"
+  Period = Rpt_Period
 GROUP BY ALL
-)
+);
 
-SELECT 
-  F.Customer_Nm
-  ,F.Harvest_Nm
-  ,F.Harvest_ID
-  ,F.Project_ID
-  ,F.CY_May AS May_2025_Fcst
-  ,IFNULL(A.Amount_Gross,0) AS May_2025_Actual
-  ,IFNULL(A.Amount_Gross,0)-F.CY_May AS Var
-FROM adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_Analytics_20250512 F
-LEFT JOIN Actuals A ON F.Project_ID = A.Project_ID
-WHERE
-  F.Customer_NM IS NOT NULL
+EXECUTE IMMEDIATE SQL1;
+
+
+
+END;
