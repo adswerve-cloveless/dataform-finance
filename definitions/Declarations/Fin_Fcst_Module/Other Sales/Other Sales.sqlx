@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPandGSuite`(Report_Period DATE)
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales`(Report_Period DATE)
 BEGIN
 
 -- DECLARE Report_Period DATE;
@@ -28,7 +28,7 @@ FROM(
 ---------------------------------------------------------------------------------------------------------
 SET SQL1 = '''
 
-CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Platforms_GCPandGSuite` AS
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales` AS
 SELECT 
   PARSE_DATE("%b_%Y", G.Period_F) AS Period
   ,G.*
@@ -36,7 +36,7 @@ FROM GCPandGSuite G
 ''';
 ---------------------------------------------------------------------------------------------------------
 SET SQL2 = '''
-CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Platforms_GCPandGSuite_Pvt` AS
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_Pvt` AS
 SELECT 
   *
 FROM GCPandGSuite G
@@ -46,7 +46,7 @@ PIVOT(SUM(IFNULL(FcstAmt,0)) FOR Period_F IN (''' || TimePeriod || '''))
 
 
 
-CREATE OR REPLACE TEMP TABLE GCPandGSuite AS
+CREATE OR REPLACE TEMP TABLE OtherSales AS
 
 WITH Periods AS(
 SELECT 
