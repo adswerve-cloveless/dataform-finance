@@ -1,12 +1,13 @@
-CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales`(Report_Period DATE)
-BEGIN
+-- CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPandGSuite`(Report_Period DATE)
+-- BEGIN
 
--- DECLARE Report_Period DATE;
+
+DECLARE Report_Period DATE;
 DECLARE PY_Start, NY_END DATE;
 DECLARE TimePeriod, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2 STRING;
 
 
--- SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
+SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
 SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
 SET NY_END = DATE(EXTRACT(YEAR FROM Report_Period)+1,12,1);
 
@@ -23,28 +24,30 @@ FROM(
     )
 );
 
-
-
 ---------------------------------------------------------------------------------------------------------
 SET SQL1 = '''
 
 CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales` AS
 SELECT 
-  PARSE_DATE("%b_%Y", G.Period_F) AS Period
-  ,G.*
-FROM GCPandGSuite G
+  PARSE_DATE("%b_%Y", O.Period_F) AS Period
+  ,O.* EXCEPT (Period_F)
+FROM OtherSales O
+ORDER BY 
+    Period
 ''';
 ---------------------------------------------------------------------------------------------------------
 SET SQL2 = '''
 CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_Pvt` AS
+
 SELECT 
   *
-FROM GCPandGSuite G
-PIVOT(SUM(IFNULL(FcstAmt,0)) FOR Period_F IN (''' || TimePeriod || '''))
+FROM OtherSales O
+PIVOT(SUM(IFNULL(FcstAmt,0)) FOR O.Period_F IN (''' || TimePeriod || '''))
+ORDER BY
+    AgencyOrMarketer
+    ,Parent_Nm
 ''';
 ---------------------------------------------------------------------------------------------------------
-
-
 
 CREATE OR REPLACE TEMP TABLE OtherSales AS
 
@@ -55,44 +58,64 @@ FROM UNNEST(
     GENERATE_DATE_ARRAY(PY_Start, NY_END, INTERVAL  1 MONTH)) AS Period
 )
 
-
 ,Parents AS (
 SELECT
   DISTINCT
   Parent_Nm
   ,Parent_ID
+  ,AgencyOrMarketer
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
 WHERE
   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
-  AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
+  AND REGEXP_CONTAINS(IS_Category,"Other Sales")
   AND Parent_Nm <> ""
   AND Parent_Nm IS NOT NULL
 )
 
+-- ,Products AS(
+-- SELECT
+--   DISTINCT
+--   MvA_LineItem
+-- FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+-- WHERE
+--   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
+--   AND IS_Category = "Other Sales"
+-- )
 
-,Products AS(
-SELECT "GCP Revenue" AS MvA_LineItem
-UNION ALL
-SELECT "GSuite Revenue" AS MvA_LineItem
-
+,Accounts AS(
+SELECT
+  DISTINCT
+  Account
+  ,CASE
+    WHEN REGEXP_CONTAINS(Account,"42410|51116") THEN "GVoice Revenue"
+    ELSE MvA_LineItem 
+   END AS LineItem
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
+WHERE
+  EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
+  AND IS_Category = "Other Sales"
+  AND REGEXP_CONTAINS(Account,"^4.*")
+  AND Parent_Nm <> ""
+  AND Parent_Nm IS NOT NULL
+  AND Period <= Report_Period
 )
 
 
-
--- SELECT TimePeriod
 
 ,Actuals AS (
 SELECT
   Period
   ,Parent_Nm
   ,Parent_ID
+  ,AgencyOrMarketer
   ,MvA_LineItem AS LineItem
+  ,Account
   ,SUM(Amount_Gross_CY) AS Amt_Gross
-  -- ,SUM(Amount_Net_CY) AS Amt_Net
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
 WHERE
   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
-  AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
+--   AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
+  AND REGEXP_CONTAINS(IS_Category,"Other Sales")
   AND Parent_Nm <> ""
   AND Parent_Nm IS NOT NULL
   AND Period <= Report_Period
@@ -106,12 +129,14 @@ SELECT
   P.Period
   ,PA.Parent_Nm
   ,PA.Parent_ID
-  ,PR.MvA_LineItem AS LineItem
+  ,PA.AgencyOrMarketer
+  ,A.LineItem
+  ,A.Account
 FROM Periods P
 CROSS JOIN Parents PA
-CROSS JOIN Products PR
-)
+CROSS JOIN Accounts A
 
+)
 
 ,LastMonth AS (
 SELECT
@@ -131,16 +156,20 @@ SELECT
   ,FORMAT_DATE("%b_%Y",J.Period) AS Period_F
   ,J.Parent_Nm
   ,J.Parent_ID
+  ,J.AgencyOrMarketer
   ,J.LineItem
+  ,J.Account
   ,IFNULL(A.Amt_Gross,0) AS Amt_Gross
 FROM Joiner J
 LEFT JOIN Actuals A ON J.Period = A.Period
   AND J.Parent_ID = A.Parent_ID
   AND J.LineItem = A.LineItem
+  AND J.Account = A.Account
 
 ORDER BY 
   J.Parent_Nm
   ,J.LineItem
+  ,J.Account
   ,J.Period
 )
 
@@ -150,18 +179,22 @@ SELECT
   ,A.Period_F
   ,A.Parent_Nm
   ,A.Parent_ID
+  ,AgencyOrMarketer
   ,A.LineItem
+  ,A.Account
   ,A.Amt_Gross
   ,ROUND(AVG(A.Amt_Gross) OVER (  
-      PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
+      PARTITION BY A.Parent_ID, A.Account    ORDER BY A.Period, A.Account
       ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
   ),2) AS Avg_3M
-  ,ROUND(AVG(A.Amt_Gross) OVER (  
-      PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
-      ROWS BETWEEN 5 PRECEDING AND CURRENT ROW
-  ),2) AS Avg_6M
+  -- ,ROUND(AVG(A.Amt_Gross) OVER (  
+  --     PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
+  --     ROWS BETWEEN 5 PRECEDING AND CURRENT ROW
+  -- ),2) AS Avg_6M
 FROM Agg A
 )
+
+
 
 ,Trended AS (
 SELECT 
@@ -169,52 +202,58 @@ SELECT
   ,C.Period_F
   ,C.Parent_Nm
   ,C.Parent_ID
+  ,C.AgencyOrMarketer
   ,C.LineItem
+  ,C.Account
   ,IFNULL(C.Amt_Gross,0) AS Amt_Gross
-  ,IFNULL(C.Avg_3M,0) AS Amt_Gross
-  ,IFNULL(C.Avg_6M,0) AS Avg_6M
+  ,IFNULL(C.Avg_3M,0) AS Avg_3M
+  -- ,IFNULL(C.Avg_6M,0) AS Avg_6M
 FROM AvgCalc C
 WHERE
   C.Period = Report_Period
 )
 
 
+
 SELECT
-  -- A.Period
-  -- ,
+--   A.Period
+--   ,
   A.Period_F
   ,A.Parent_Nm
   ,A.Parent_ID
+  ,A.Account
   ,A.LineItem
+  ,A.AgencyOrMarketer
   ,A.Amt_Gross AS Gross_Actual
   ,CASE
     WHEN A.Period <= Report_Period THEN A.Amt_Gross
     WHEN A.Period > Report_Period THEN
       CASE
-        WHEN A.LineItem = "GCP Revenue" THEN T.Avg_3M
-        WHEN A.LineItem = "GSuite Revenue" THEN T.Avg_3M
+        WHEN A.LineItem = "LiveRamp Revenue" THEN T.Avg_3M
+        WHEN A.LineItem = "Looker Revenue" THEN T.Avg_3M
+        WHEN A.LineItem = "Other Analytics Revenue" THEN T.Avg_3M
+        WHEN A.LineItem = "Other Media Revenue" THEN T.Avg_3M
         ELSE 0.99
       END
-    -- ELSE 0.99
    END AS FcstAmt
 FROM Agg A
 LEFT JOIN Trended T ON A.Parent_ID = T.Parent_ID
   AND A.LineItem = T.LineItem
--- WHERE
---  REGEXP_CONTAINS(A.Parent_Nm,"Auto")
-  -- A.Parent_ID = "4610"
-  -- AND A.LineItem = "GCP Revenue"
+  AND A.Account = T.Account
+GROUP BY ALL
+HAVING SUM(FcstAmt) >0
 ORDER BY 
   A.Parent_Nm
+  ,A.Account
   ,A.LineItem
-  ,A.Period
-
+  ,A.Period_F
 ;
 
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
 
-END;
 
 
+
+-- END;
