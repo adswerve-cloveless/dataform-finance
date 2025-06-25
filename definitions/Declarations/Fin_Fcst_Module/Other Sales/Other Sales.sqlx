@@ -55,7 +55,7 @@ SELECT
   ,LineItem
   ,AgencyOrMarketer
   ,IFNULL(FcstAmt,0) AS FcstAmt
-FROM `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_test` 
+FROM OtherSales
 )
 
 ,PVT AS (
