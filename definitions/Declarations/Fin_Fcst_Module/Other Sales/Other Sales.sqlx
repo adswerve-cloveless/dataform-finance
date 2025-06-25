@@ -4,7 +4,7 @@
 
 DECLARE Report_Period DATE;
 DECLARE PY_Start, NY_END DATE;
-DECLARE TimePeriod, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2 STRING;
+DECLARE TimePeriod, TimePeriod_WithDefaults, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2, SQL3 STRING;
 
 
 SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
@@ -24,6 +24,13 @@ FROM(
     )
 );
 
+SET TimePeriod_WithDefaults = (
+  SELECT STRING_AGG(
+    'IFNULL(' || FORMAT_DATE('%b_%Y', X) || ', 0) AS ' ||  FORMAT_DATE('%b_%Y', X) 
+  )
+  FROM UNNEST(GENERATE_DATE_ARRAY(PY_Start, DATE_ADD(PY_Start, INTERVAL 23 MONTH), INTERVAL 1 MONTH)) AS X
+);
+
 ---------------------------------------------------------------------------------------------------------
 SET SQL1 = '''
 
@@ -39,15 +46,40 @@ ORDER BY
 SET SQL2 = '''
 CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_Pvt` AS
 
+WITH OS_Data AS (
 SELECT 
+  Period_F
+  ,Parent_Nm
+  ,Parent_ID
+  ,Account
+  ,LineItem
+  ,AgencyOrMarketer
+  ,IFNULL(FcstAmt,0) AS FcstAmt
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_test` 
+)
+
+,PVT AS (
+SELECT
   *
-FROM OtherSales O
-PIVOT(SUM(IFNULL(FcstAmt,0)) FOR O.Period_F IN (''' || TimePeriod || '''))
+FROM OS_Data
+PIVOT(SUM(IFNULL(FcstAmt,0)) FOR Period_F IN (''' || TimePeriod || '''))
 ORDER BY
     AgencyOrMarketer
     ,Parent_Nm
+)
+
+SELECT 
+  Parent_Nm
+  ,Parent_ID
+  ,Account,	LineItem
+  ,AgencyOrMarketer
+  ,''' || TimePeriod_WithDefaults || '''
+FROM PVT
+
 ''';
 ---------------------------------------------------------------------------------------------------------
+
+
 
 CREATE OR REPLACE TEMP TABLE OtherSales AS
 
@@ -195,6 +227,12 @@ FROM Agg A
 )
 
 
+-- SELECT * FROM AvgCalc
+-- WHERE
+--   REGEXP_CONTAINS(Account,"^4.*")
+
+
+
 
 ,Trended AS (
 SELECT 
@@ -212,6 +250,9 @@ FROM AvgCalc C
 WHERE
   C.Period = Report_Period
 )
+
+
+-- SELECT * FROM Trended
 
 
 
@@ -252,8 +293,6 @@ ORDER BY
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
-
-
 
 
 -- END;
