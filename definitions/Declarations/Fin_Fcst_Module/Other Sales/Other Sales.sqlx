@@ -55,7 +55,7 @@ SELECT
   ,LineItem
   ,AgencyOrMarketer
   ,IFNULL(FcstAmt,0) AS FcstAmt
-FROM OtherSales
+FROM OtherSales 
 )
 
 ,PVT AS (
@@ -77,7 +77,7 @@ SELECT
 FROM PVT
 
 ''';
----------------------------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------------------------------
 
 
 
@@ -118,20 +118,21 @@ WHERE
 SELECT
   DISTINCT
   Account
-  ,CASE
-    WHEN REGEXP_CONTAINS(Account,"42410|51116") THEN "GVoice Revenue"
-    ELSE MvA_LineItem 
-   END AS LineItem
+  ,MvA_LineItem AS LineItem
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
 WHERE
   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
-  AND IS_Category = "Other Sales"
-  AND REGEXP_CONTAINS(Account,"^4.*")
+  AND (
+        ( 
+            IS_Category = "Other Sales"
+            AND REGEXP_CONTAINS(Account,"^4.*")
+        )
+        OR REGEXP_CONTAINS(Account,"51150|51165|51199|51510|51515|51520")
+      )
   AND Parent_Nm <> ""
   AND Parent_Nm IS NOT NULL
   AND Period <= Report_Period
 )
-
 
 
 ,Actuals AS (
@@ -142,12 +143,14 @@ SELECT
   ,AgencyOrMarketer
   ,MvA_LineItem AS LineItem
   ,Account
-  ,SUM(Amount_Gross_CY) AS Amt_Gross
+  ,SUM(Amount_Net_CY) AS Amt_Net
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
 WHERE
   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
---   AND REGEXP_CONTAINS(MvA_LineItem,"GCP Revenue|GSuite Revenue")
-  AND REGEXP_CONTAINS(IS_Category,"Other Sales")
+  AND (
+        REGEXP_CONTAINS(IS_Category,"Other Sales")
+        OR REGEXP_CONTAINS(Account,"51150|51165|51199|51510|51515|51520")
+      )
   AND Parent_Nm <> ""
   AND Parent_Nm IS NOT NULL
   AND Period <= Report_Period
@@ -167,8 +170,8 @@ SELECT
 FROM Periods P
 CROSS JOIN Parents PA
 CROSS JOIN Accounts A
-
 )
+
 
 ,LastMonth AS (
 SELECT
@@ -176,7 +179,7 @@ SELECT
   ,Parent_Nm
   ,Parent_ID
   ,LineItem
-  ,Amt_Gross
+  ,Amt_Net
 FROM Actuals 
 WHERE
  Period = Report_Period
@@ -191,7 +194,7 @@ SELECT
   ,J.AgencyOrMarketer
   ,J.LineItem
   ,J.Account
-  ,IFNULL(A.Amt_Gross,0) AS Amt_Gross
+  ,IFNULL(A.Amt_Net,0) AS Amt_Net
 FROM Joiner J
 LEFT JOIN Actuals A ON J.Period = A.Period
   AND J.Parent_ID = A.Parent_ID
@@ -214,12 +217,12 @@ SELECT
   ,AgencyOrMarketer
   ,A.LineItem
   ,A.Account
-  ,A.Amt_Gross
-  ,ROUND(AVG(A.Amt_Gross) OVER (  
+  ,A.Amt_Net
+  ,ROUND(AVG(A.Amt_Net) OVER (  
       PARTITION BY A.Parent_ID, A.Account    ORDER BY A.Period, A.Account
       ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
   ),2) AS Avg_3M
-  -- ,ROUND(AVG(A.Amt_Gross) OVER (  
+  -- ,ROUND(AVG(A.Amt_Net) OVER (  
   --     PARTITION BY A.Parent_ID, A.LineItem    ORDER BY A.Period
   --     ROWS BETWEEN 5 PRECEDING AND CURRENT ROW
   -- ),2) AS Avg_6M
@@ -243,7 +246,7 @@ SELECT
   ,C.AgencyOrMarketer
   ,C.LineItem
   ,C.Account
-  ,IFNULL(C.Amt_Gross,0) AS Amt_Gross
+  ,IFNULL(C.Amt_Net,0) AS Amt_Net
   ,IFNULL(C.Avg_3M,0) AS Avg_3M
   -- ,IFNULL(C.Avg_6M,0) AS Avg_6M
 FROM AvgCalc C
@@ -265,24 +268,18 @@ SELECT
   ,A.Account
   ,A.LineItem
   ,A.AgencyOrMarketer
-  ,A.Amt_Gross AS Gross_Actual
+  ,A.Amt_Net AS Net_Actual
   ,CASE
-    WHEN A.Period <= Report_Period THEN A.Amt_Gross
-    WHEN A.Period > Report_Period THEN
-      CASE
-        WHEN A.LineItem = "LiveRamp Revenue" THEN T.Avg_3M
-        WHEN A.LineItem = "Looker Revenue" THEN T.Avg_3M
-        WHEN A.LineItem = "Other Analytics Revenue" THEN T.Avg_3M
-        WHEN A.LineItem = "Other Media Revenue" THEN T.Avg_3M
-        ELSE 0.99
-      END
+    WHEN A.Period <= Report_Period THEN A.Amt_Net
+    WHEN A.Period > Report_Period THEN T.Avg_3M
+    ELSE 0.99
    END AS FcstAmt
 FROM Agg A
 LEFT JOIN Trended T ON A.Parent_ID = T.Parent_ID
   AND A.LineItem = T.LineItem
   AND A.Account = T.Account
 GROUP BY ALL
-HAVING SUM(FcstAmt) >0
+HAVING SUM(FcstAmt) <>0
 ORDER BY 
   A.Parent_Nm
   ,A.Account
