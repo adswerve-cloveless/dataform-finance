@@ -9,7 +9,7 @@ config {
 CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_OtherSales` 
 (
     Period DATE
-    ,Acctount STRING
+    ,Account STRING
     ,MrkAgy STRING
     ,Amount FLOAT64
     
