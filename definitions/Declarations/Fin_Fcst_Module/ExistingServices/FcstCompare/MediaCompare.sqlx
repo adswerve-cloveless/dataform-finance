@@ -1,0 +1,134 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_FcstCompare_Media`(Rpt_Period DATE)
+BEGIN
+
+DECLARE Fcst_Tbl_Nm, SQL1 STRING;
+DECLARE Fcst_Values, Act_Values, Var_Field_Nm, Act_Field_Nm, Fcst_Field_Nm STRING;
+
+-- DECLARE Rpt_Period DATE;
+-- SET Rpt_Period = "2025-05-01";
+
+SET Fcst_Values = CONCAT(FORMAT_DATE('F.CY_%b',Rpt_Period));
+
+SET Act_Field_Nm = FORMAT_DATE('%b_Act',Rpt_Period);
+SET Fcst_Field_Nm = FORMAT_DATE('%b_Fcst',Rpt_Period);
+SET Var_Field_Nm = FORMAT_DATE('%b_Var',Rpt_Period);
+
+---------------------------------------------------------------------------------------------------------------------------
+SET Fcst_Tbl_Nm = (
+WITH TableList AS (
+SELECT 
+  table_name
+  ,CAST(REGEXP_EXTRACT(table_name, '(\\d+)$') AS INT64) AS Extracted_nbr
+  ,PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$'))) AS Fcst_DT
+  ,EXTRACT(MONTH FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) AS MONTH
+  ,EXTRACT(YEAR FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) AS YEAR
+FROM adswerve-finance-reporting.Fin_Fcst_Module.INFORMATION_SCHEMA.TABLES
+WHERE
+  REGEXP_CONTAINS(table_name,"ExistingProjs_Media_")
+  AND EXTRACT(MONTH FROM PARSE_DATE('%Y%m%d',(REGEXP_EXTRACT(table_name, '(\\d+)$')))) = EXTRACT(MONTH FROM Rpt_Period) 
+ORDER BY 
+  Extracted_nbr DESC
+)
+
+,MaxNbr AS (
+SELECT
+  MAX(Extracted_nbr) AS Extracted_nbr
+FROM TableList
+)
+
+SELECT
+  CONCAT("`adswerve-finance-reporting.Fin_Fcst_Module.",T.table_name,"`") AS table_name
+FROM TableList T
+WHERE
+  T.Extracted_nbr = (SELECT Extracted_nbr FROM MaxNbr)
+);
+---------------------------------------------------------------------------------------------------------------------------
+SET SQL1 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_FcstCompare_Media` AS 
+SELECT 
+  IFNULL(F.Customer_Nm, C.Customer_Nm)	Harvest_Nm	
+  ,F.Harvest_ID	
+  ,IFNULL(F.Project_ID, C.Project_ID) AS Project_ID
+  -- ,Analytics_Director
+  -- ,Analytics_Manager
+  -- ,Consultants
+  -- ,Acct_Owner
+  -- ,Inactive
+  ,F.Product__c
+  ,F.G_Funded
+  ,F.Fcst_Class	
+  ,F.MRK_Vs_AGY
+  ,F.Project_Type
+  ,F.Infer_StartDt
+  ,F.Infer_EndDt
+  ,F.Contract_Rate
+  ,F.Contract_Val
+  -- ,RevToDate
+  -- ,Total_Overages
+  -- ,Def_Balance
+  -- ,Fcst_Var
+  ,IFNULL(C.Amount_Gross,0) AS ''' || Act_Field_Nm || '''
+  ,''' || Fcst_Values || ''' AS ''' || Fcst_Field_Nm || '''
+  ,ROUND(IFNULL(C.Amount_Gross,0) - ''' || Fcst_Values || ''',0) AS ''' || Var_Field_Nm || '''
+
+FROM ''' || Fcst_Tbl_Nm || ''' F 
+LEFT JOIN Compare_Actuals C ON 
+  IF(F.Project_ID = C.Project_ID, TRUE,F.Project_ID = C.OpportunityId)
+WHERE
+ F.Project_ID IS NOT NULL
+''';
+---------------------------------------------------------------------------------------------------------------------------
+
+CREATE OR REPLACE TEMP TABLE Compare_Actuals AS (
+WITH ProjectList AS(
+SELECT 
+  DISTINCT
+  NS_Project_ID
+FROM `adswerve-finance.Fin_DataSources.Services_ExistingProjects` 
+WHERE
+  CAST(NS_EndDt AS DATE) >= DATE_SUB(Rpt_Period, INTERVAL 2 MONTH)
+)
+
+,BASE AS (
+SELECT 
+  R.*
+  ,CASE 
+        WHEN Class = "" OR Class IS NULL THEN "Unknown"
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
+        WHEN REGEXP_CONTAINS(Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
+        WHEN REGEXP_CONTAINS(Class,"Product : Media") THEN "Product : Media" /*Media*/
+        WHEN REGEXP_CONTAINS(MvA_LineItem,"Analytics Services") THEN "Product : Analytics" /*Analytics*/
+        ELSE "Error"
+      END AS Fcst_Class
+  ,C.google_funded
+FROM `adswerve-finance.Fin_DataSources.Revenue_DataDump` R
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
+WHERE
+  R.Period <= Rpt_Period
+  AND EXTRACT(YEAR FROM R.Period) > 2022
+  AND REGEXP_CONTAINS(R.Account,"43130|42115|43140|43150|43120|42135|43175|41117") 
+  AND Project_ID IS NOT NULL
+)
+
+SELECT
+  B.Parent_Nm
+  ,B.Customer_Nm
+  ,B.Parent_ID
+  ,B.Customer_ID
+  ,B.Project_ID
+  ,S.OpportunityId
+  ,SUM(B.Amount_Gross) AS Amount_Gross
+FROM BASE B
+LEFT JOIN `adswerve-finance.Fin_Stage.NS_Sales_Orders` S ON B.Project_ID = S.ProjectID
+WHERE 
+  Period = Rpt_Period
+GROUP BY ALL
+);
+
+EXECUTE IMMEDIATE SQL1;
+
+
+
+END;
