@@ -72,7 +72,8 @@ SELECT
   ,ROUND(IFNULL(C.Amount_Gross,0) - ''' || Fcst_Values || ''',0) AS ''' || Var_Field_Nm || '''
 
 FROM ''' || Fcst_Tbl_Nm || ''' F 
-FULL JOIN Compare_Actuals C ON F.Project_ID = C.Project_ID
+LEFT JOIN Compare_Actuals C ON 
+  IF(F.Project_ID = C.Project_ID, TRUE,F.Project_ID = C.OpportunityId)
 WHERE
  F.Project_ID IS NOT NULL
 ''';
@@ -112,13 +113,15 @@ WHERE
 )
 
 SELECT
-  Parent_Nm
-  ,Customer_Nm
-  ,Parent_ID
-  ,Customer_ID
-  ,Project_ID
-  ,SUM(Amount_Gross) AS Amount_Gross
-FROM BASE
+  B.Parent_Nm
+  ,B.Customer_Nm
+  ,B.Parent_ID
+  ,B.Customer_ID
+  ,B.Project_ID
+  ,S.OpportunityId
+  ,SUM(B.Amount_Gross) AS Amount_Gross
+FROM BASE B
+LEFT JOIN `adswerve-finance.Fin_Stage.NS_Sales_Orders` S ON B.Project_ID = S.ProjectID
 WHERE 
   Period = Rpt_Period
 GROUP BY ALL
