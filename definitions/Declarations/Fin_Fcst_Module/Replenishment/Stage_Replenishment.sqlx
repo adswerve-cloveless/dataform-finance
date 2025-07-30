@@ -1,0 +1,46 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "Stage_Replenishment"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Replenishment` 
+(
+    LineItem STRING
+    ,AgyMrk STRING
+
+    ,CY_Jan FLOAT64
+    ,CY_Feb FLOAT64
+    ,CY_Mar FLOAT64
+    ,CY_Apr FLOAT64
+    ,CY_May FLOAT64
+    ,CY_Jun FLOAT64
+    ,CY_Jul FLOAT64
+    ,CY_Aug FLOAT64
+    ,CY_Sep FLOAT64
+    ,CY_Oct FLOAT64
+    ,CY_Nov FLOAT64
+    ,CY_Dec FLOAT64
+
+    ,NY_Jan FLOAT64
+    ,NY_Feb FLOAT64
+    ,NY_Mar FLOAT64
+    ,NY_Apr FLOAT64
+    ,NY_May FLOAT64
+    ,NY_Jun FLOAT64
+    ,NY_Jul FLOAT64
+    ,NY_Aug FLOAT64
+    ,NY_Sep FLOAT64
+    ,NY_Oct FLOAT64
+    ,NY_Nov FLOAT64
+    ,NY_Dec FLOAT64
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1nSzJeBmvCyt8n76UCpXR-QVCxK7zTqBjzCW5t6vT7Zk'] --Update as needed
+  ,sheet_range = 'Upload Data!D14:AC37'  --Sheet Name
+  ,skip_leading_rows = 0
+  --,header = 0
+)
