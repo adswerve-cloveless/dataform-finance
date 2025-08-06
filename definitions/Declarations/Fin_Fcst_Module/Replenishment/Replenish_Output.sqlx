@@ -1,0 +1,227 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_Output`(CurrentYear INT64)
+BEGIN
+
+--`adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_Output`
+
+-- DECLARE CurrentYear INT64;
+DECLARE NextYear INT64;
+-- SET CurrentYear = 2025;
+SET NextYear = CurrentYear+1;
+
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_Output` AS
+
+--Get Replenishment Data
+WITH Upload_Data AS (
+SELECT 
+  LineItem
+  , AgyMrk
+  ,Start_Date
+  ,Total
+ FROM `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Replenishment`
+UNPIVOT (Total FOR Start_Date IN 
+  
+  (CY_Jan,CY_Feb,CY_Mar,CY_Apr,CY_May,CY_Jun,CY_Jul,CY_Aug,CY_Sep,CY_Oct,CY_Nov,CY_Dec
+   ,NY_Jan,NY_Feb,NY_Mar,NY_Apr,NY_May,NY_Jun,NY_Jul,NY_Aug,NY_Sep,NY_Oct,NY_Nov,NY_Dec
+  )
+)
+)
+
+-- Covert Period to date values & calculate Revenue Per Month
+,DataSet1 AS (
+SELECT 
+  LineItem
+  ,AgyMrk
+  ,CASE
+    WHEN AgyMrk = "Agency" THEN CONCAT(  
+      CASE
+        WHEN REGEXP_CONTAINS(LineItem,"DV360") THEN "DV360"
+        WHEN REGEXP_CONTAINS(LineItem,"CM360") THEN "CM360"
+        WHEN REGEXP_CONTAINS(LineItem,"SA360") THEN "SA360"
+        WHEN REGEXP_CONTAINS(LineItem,"Other Media Revenue") THEN "OtherMediaRev"
+        WHEN REGEXP_CONTAINS(LineItem,"GA360") THEN "GA360"
+        WHEN REGEXP_CONTAINS(LineItem,"GCP Revenue") THEN "GCP"
+        WHEN REGEXP_CONTAINS(LineItem,"GSuite") THEN "GSuite"
+        WHEN REGEXP_CONTAINS(LineItem,"Analytics Services") THEN "AnalyticsServ"
+        WHEN REGEXP_CONTAINS(LineItem,"GCP Services") THEN "GCPServ"
+        WHEN REGEXP_CONTAINS(LineItem,"Adobe Services") THEN "AdobeServ"
+        WHEN REGEXP_CONTAINS(LineItem,"Media Services") THEN "MediaServ"
+        WHEN REGEXP_CONTAINS(LineItem,"Other Sales") THEN "OtherSales"
+        ELSE "Error"
+      END,"_Agy")
+    WHEN AgyMrk = "Marketer" THEN CONCAT(  
+      CASE
+        WHEN REGEXP_CONTAINS(LineItem,"DV360") THEN "DV360"
+        WHEN REGEXP_CONTAINS(LineItem,"CM360") THEN "CM360"
+        WHEN REGEXP_CONTAINS(LineItem,"SA360") THEN "SA360"
+        WHEN REGEXP_CONTAINS(LineItem,"Other Media Revenue") THEN "OtherMediaRev"
+        WHEN REGEXP_CONTAINS(LineItem,"GA360") THEN "GA360"
+        WHEN REGEXP_CONTAINS(LineItem,"GCP Revenue") THEN "GCP"
+        WHEN REGEXP_CONTAINS(LineItem,"GSuite") THEN "GSuite"
+        WHEN REGEXP_CONTAINS(LineItem,"Analytics Services") THEN "AnalyticsServ"
+        WHEN REGEXP_CONTAINS(LineItem,"GCP Services") THEN "GCPServ"
+        WHEN REGEXP_CONTAINS(LineItem,"Adobe Services") THEN "AdobeServe"
+        WHEN REGEXP_CONTAINS(LineItem,"Media Services") THEN "MediaServ"
+        WHEN REGEXP_CONTAINS(LineItem,"Other Sales") THEN "OtherSales"
+        ELSE "Error"
+      END,"_Mrk")
+    END AS ID
+  
+  ,CASE
+    WHEN REGEXP_CONTAINS(LineItem,"DV360|CM360|SA360|Other Media Revenue|GA360|GCP Revenue|GSuite") THEN "Evergreen"
+    ELSE "Year"
+   END AS Term_Type  
+
+  -- ,Period
+  ,PARSE_DATE('%Y_%b',
+      CASE
+        WHEN LEFT(Start_Date, 2) ="CY" THEN REPLACE(Start_Date, 'CY', CAST(CurrentYear AS STRING))
+        WHEN LEFT(Start_Date, 2) ="NY" THEN REPLACE(Start_Date, 'NY', CAST(NextYear AS STRING))
+      END 
+  )AS Start_Date
+  ,Total
+  ,ROUND(SAFE_DIVIDE(Total,12),2) AS RevPerMonth
+FROM Upload_Data
+)
+
+
+-- 
+,Periods AS (
+SELECT X AS Timeline
+FROM UNNEST
+(GENERATE_DATE_ARRAY(
+  (
+    SELECT 
+      DATE(CurrentYear,1,1)
+    FROM `adswerve-finance.Fin_Stage.NewBizAssumptions` 
+    WHERE 
+      Assumption_Type = "Report_Period"
+  ) 
+  ,DATE_ADD(
+              (
+                DATE(CurrentYear,1,1)
+              )
+              ,INTERVAL 23 MONTH
+            )
+    ,INTERVAL 1 MONTH
+  )   
+) AS X
+)
+
+
+-- Determine Term_Type and create artificial Opp ID
+,Details1 AS (
+SELECT 
+  LineItem	
+  ,AgyMrk	
+  ,ID 
+  ,Start_Date
+  ,Total
+  ,RevPerMonth
+  ,Term_Type
+  ,ROW_NUMBER() OVER (PARTITION BY ID ORDER BY Start_Date,ID ASC  ) AS RwNum
+  
+FROM DataSet1
+WHERE
+  Total <> 0
+ORDER BY 
+  Start_Date ASC
+  ,ID
+)
+
+,Details2 AS(
+SELECT
+  LineItem	
+  ,AgyMrk	
+  ,CONCAT(ID,"_",RwNum) AS ID
+  ,Term_Type
+  ,Start_Date
+  ,Total
+  ,RevPerMonth
+FROM Details1
+)
+
+
+,Joiner AS (
+SELECT 
+  P.Timeline
+  ,D.LineItem
+  ,D.AgyMrk
+  ,D.Term_Type
+FROM Periods P
+CROSS JOIN
+(SELECT 
+  DISTINCT
+  LineItem
+  ,AgyMrk
+  ,Term_Type
+FROM DataSet1
+) D
+ORDER BY
+1 ASC,2,3
+)
+
+,Starts AS(
+SELECT
+  DISTINCT
+  ID
+  ,Start_Date
+  ,Total
+FROM Details2
+)
+
+
+
+
+
+
+
+,Trended AS(
+SELECT 
+  J.Timeline AS Period
+  -- ,D.Start_Date
+  -- ,IF(J.Term_Type="Evergreen",DATE(NextYear,12,1),DATE_ADD(D.Start_Date,INTERVAL 11 MONTH)) AS End_Date
+  ,J.LineItem
+  ,J.AgyMrk
+  ,IFNULL(D.ID,"N/A") AS ID
+  ,D.Total
+  ,J.Term_Type
+  ,IFNULL(D.RevPerMonth,0) AS RevPerMonth
+FROM JOINER J
+
+LEFT JOIN Details2 D ON 
+  J.LineItem = D.LineItem
+  AND J.AgyMrk =D.AgyMrk
+  AND 
+    CASE 
+      WHEN J.Term_Type = "Evergreen" THEN IF(J.Timeline >= D.Start_Date,TRUE,FALSE)
+      WHEN J.Term_Type = "Year" THEN IF(J.Timeline >= D.Start_Date AND J.Timeline <=DATE_ADD(D.Start_Date, INTERVAL 11 MONTH),TRUE,FALSE)
+      ELSE FALSE
+    END
+ORDER BY
+  J.Timeline ASC
+)
+
+
+
+SELECT
+  T.Period
+  ,T.LineItem	
+  ,T.AgyMrk
+  ,T.ID
+  ,S.Start_Date
+  ,IF(T.Term_Type="Evergreen",DATE(NextYear,12,1),DATE_ADD(S.Start_Date,INTERVAL 11 MONTH)) AS End_Date
+  ,T.Term_Type
+  ,S.Total
+  ,T.RevPerMonth
+FROM Trended T
+LEFT JOIN Starts S ON
+  T.ID = S.ID
+-- WHERE
+--  T.ID <> "N/A"
+ORDER BY
+  T.Period ASC
+  ,T.LineItem
+  ,T.AgyMrk
+
+
+;END;
