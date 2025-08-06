@@ -98,7 +98,7 @@ SELECT
     WHEN Project_Type = "Rate Card" THEN 0
     ELSE ROUND(Contract_Val - (IFNULL(RevToDate,0)-IFNULL(Total_Overages,0)) - ROUND(SUM(''' || TotalFcst || '''),2),2)
    END AS Fcst_Var
-  ,IF(IN_SF_NotInNS = "F" AND (Class IS NULL OR Class = "" ),TRUE,FALSE) AS Aduit_No_Clas
+  ,IF(IN_SF_NotInNS = "F" AND (Class IS NULL OR Class = "" ),TRUE,FALSE) AS Audit_No_Class
   ,IF(IN_SF_NotInNS = "F" AND Project_Type <> "Rate Card" AND (Contract_VAL IS NULL OR Contract_Val=0),TRUE,FALSE) AS Audit_NoContractValue
   ,IF(Infer_StartDt=Infer_EndDt,TRUE,FALSE) AS Audit_StartEnd_Same
   ,IF(IN_SF_NotInNS = "F" AND Inactive ="F" AND NS_EndDt<CAST("''' || Report_Period || '''" AS DATE),TRUE,FALSE) AS Audit_Past_NS_EndDt
@@ -121,9 +121,9 @@ CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Services_Exi
 SELECT 
   NS_Project_ID	
   ,Project_name 
-  ,"Aduit_No_Clas" AS Audit
+  ,"Audit_No_Class" AS Audit
 FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
-WHERE  Aduit_No_Clas = TRUE 
+WHERE  Audit_No_Class = TRUE 
   AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
   AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
 
@@ -168,24 +168,27 @@ UNION ALL
 SELECT 
   NS_Project_ID	
   ,Project_name 
-  ,"Audit_Past_NS_EndDt" AS Audit
+  ,"Audit_Past_NS_EndDt_No_DefBal" AS Audit
 FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
 WHERE  
   Audit_Past_NS_EndDt = TRUE 
   AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
-  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+  AND (IFNULL(Def_Balance,0) ) = 0
+  -- AND Inactive = "F"
+  AND IFNULL(YTD_Rev,0) <> 0
 
 UNION ALL
 
 SELECT 
   NS_Project_ID	
   ,Project_name 
-  ,"Audit_Past_NS_EndDt" AS Audit
+  ,"Audit_Past_NS_EndDt_Has_DefBal" AS Audit
 FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
 WHERE  
   Audit_Past_NS_EndDt = TRUE 
   AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
-  AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
+  AND (IFNULL(Def_Balance,0) ) <> 0
+  
 
 UNION ALL
 
