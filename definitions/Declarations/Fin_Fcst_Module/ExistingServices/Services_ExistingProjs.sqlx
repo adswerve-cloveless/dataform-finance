@@ -703,7 +703,19 @@ SELECT
   ,P.Currency	
   ,P.IN_SF_NotInNS	
 
-  ,IFNULL(Fcst_Class,
+--   ,IFNULL(Fcst_Class,
+--     CASE 
+--       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
+--       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
+--       WHEN REGEXP_CONTAINS(A.Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
+--       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics") THEN "Product : Analytics" /*Analytics*/
+--       WHEN REGEXP_CONTAINS(A.Class,"Product : Media") THEN "Product : Media" /*Media*/
+--       ELSE "Error"
+--     END
+--   ) AS Fcst_Class
+
+
+,IF(A.Class IS NOT NULL, 
     CASE 
       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
@@ -712,7 +724,10 @@ SELECT
       WHEN REGEXP_CONTAINS(A.Class,"Product : Media") THEN "Product : Media" /*Media*/
       ELSE "Error"
     END
-  ) AS Fcst_Class
+    ,P.Fcst_Class) AS Fcst_Class
+
+
+
 FROM Base_1 P 
 LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.ExistingServicesOverride` A ON P.NS_Project_ID = A.NS_Project_ID
 
