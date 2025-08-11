@@ -1,0 +1,242 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fcst_Module",
+  name: "Pipeline_Replenish_closedwon"
+}
+
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_closedwon`(MaxMonth INT64)
+BEGIN
+--`adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_closedwon`()
+
+DECLARE Data_START DATE;
+DECLARE Data_END DATE;
+DECLARE PY2, PY1, CY INT64;
+-- DECLARE MaxMonth INT64;
+SET Data_START = DATE(EXTRACT(YEAR FROM CURRENT_DATE)-2,1,1);
+SET DATA_END = DATE (EXTRACT(YEAR FROM CURRENT_DATE),12,1);
+SET PY2 = EXTRACT(YEAR FROM Data_START);
+SET PY1 = PY2+1;
+SET CY = PY1 +1;
+-- SET MaxMonth = EXTRACT(MONTH FROM(SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`()));
+
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Pipeline_Replenish_closedwon` AS
+
+
+WITH Opp_Data AS (
+SELECT  
+  DATE_TRUNC(CAST(O.CloseDate AS DATE), MONTH) AS EOM_ClosedDT
+  ,EXTRACT(YEAR FROM CAST(O.CloseDate AS DATE)) AS Year
+  ,EXTRACT(MONTH FROM CAST(O.CloseDate AS DATE)) AS Month 
+  -- ,O.Opportunity_Safe_ID__c AS SF_OpportunityID
+  -- ,O.AccountID
+  -- ,A.celigo_sfnsio__NetSuite_Id__c 
+  -- ,O.Name
+  ,O.Current_Pipeline_Stage__c
+  ,O.Product_Combine__c
+  ,O.Product_Family__c
+  ,O.Service__c
+  ,O.StageName
+  -- ,O.Type -- New vs. Existing
+  ,O.Account_Client_Type__c AS AgyMrk
+  ,IF(O.RecordTypeId = "0124M000000XA5MQAW",TRUE,FALSE) AS Renewal
+  ,CASE
+    WHEN REGEXP_CONTAINS(O.Service__c,"Retainer") THEN "Retainer"
+    WHEN REGEXP_CONTAINS(O.Service__c,"Block Hours") THEN "Block Hours"
+    WHEN REGEXP_CONTAINS(O.Service__c,"Rate Card") THEN "Rate Card"
+    ELSE "Fixed Bid"
+   END AS Project_Type
+  
+  ,IFNULL(CAST(M2.GL AS STRING),'Error') AS GL
+  ,IFNULL(A2.display_name,'Error')  AS GL_Nm
+  ,CASE 
+    WHEN A2.internal_income_statment = "Services" AND NOT REGEXP_CONTAINS(M2.Class,"Adobe|Media|GCP") THEN "Analytics Services"
+    WHEN A2.internal_income_statment = "Services" AND REGEXP_CONTAINS(M2.Class,"GCP") THEN "GCP Services"
+    WHEN A2.internal_income_statment = "Services" AND REGEXP_CONTAINS(M2.Class,"Adobe") THEN "Adobe Services"
+    WHEN A2.internal_income_statment = "Services" AND REGEXP_CONTAINS(M2.Class,"Media") THEN "Media Services"
+    ELSE IFNULL(A2.internal_income_statment,'Error') 
+   END AS Category
+
+  ,M2.Class
+  
+  ,SUM(IF(O.CloseDate <= "2024-12-31" 
+    ,`adswerve-finance.Fin_Routines.AdswerveNetValue2024`(
+        O.Product_Combine__c
+        , CAST(O.Opportunity_Value__c AS FLOAT64)
+        , CAST(O.Opportunity_Value_Net__c AS FLOAT64))
+    ,O.Opportunity_Value_Net__c)) AS Opp_Value
+
+FROM `adswerve-sfdc.Warehouse.opportunity` O
+LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` C ON O.Product_Family__c = C.Product_Family
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProdFamilynService_GLnClass_Map` M2 ON 
+  O.Product_Family__c = M2.Product_Family__c
+  AND IFNULL(O.Service__c,"") = M2.Service__c
+LEFT JOIN `adswerve-finance.Warehouse.Account` A2 ON CAST(M2.GL AS STRING) = A2.Number
+-- LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` C2 ON O.Product_Family__c = C2.Product_Family  -- can us M2 instead
+WHERE
+  StageName = "Closed Won"
+  AND CAST(O.CloseDate AS DATE) >= Data_START
+  AND CAST(O.CloseDate AS DATE) <= DATA_END 
+  
+GROUP BY ALL
+-- ORDER BY 
+--  EOM_CreatedDT DESC
+)
+
+
+--QA Test---------------------------------------------------
+
+-- SELECT
+--  *
+-- FROM Opp_Data
+-- WHERE
+--  Category = "Services"
+---------------------------------------------------------------
+
+
+-- Aggregate Data
+,Opp_Data2 AS (
+SELECT
+  O.EOM_ClosedDT	
+  ,O.Year
+  ,O.Month
+  ,O.AgyMrk
+  -- ,M.Class
+  -- ,IFNULL(CAST(M.GL AS STRING),'Error') AS GL
+  -- ,IFNULL(A.display_name,'Error')  AS GL_Nm
+  ,O.Category
+  ,ROUND(SUM(O.Opp_Value),2) AS Opp_Value
+  ,COUNT(O.EOM_ClosedDT) AS Opp_Cnt
+FROM Opp_Data O
+-- LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` C ON O.Product_Family__c = C.Product_Family -- can us M instead
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProdFamilynService_GLnClass_Map` M ON 
+  O.Product_Family__c = M.Product_Family__c
+  AND IFNULL(O.Service__c,"") = M.Service__c
+-- LEFT JOIN `adswerve-finance.Warehouse.Account` A ON CAST(M.GL AS STRING) = A.Number
+WHERE
+  Opp_Value NOT BETWEEN -1 AND 1
+  AND Opp_Value IS NOT NULL
+  AND Product_Combine__c <> "-"
+  -- AND O.Category <> "Error"  -- Comment out in final version
+GROUP BY ALL
+)
+
+
+--QA Test---------------------------------------------------
+-- SELECT *
+-- FROM Opp_Data2 
+-- WHERE
+--  Category = "Error"
+---------------------------------------------------
+
+-- Compare Same Period Last Year 
+,PriorYear2 AS (
+SELECT
+  O.EOM_ClosedDT	
+  ,O.Year
+  ,O.Month
+  ,O.AgyMrk
+  -- ,O.Class
+  -- ,O.GL
+  -- ,O.GL_Nm
+  ,O.Category
+  ,O.Opp_Value AS OppVal_PY2
+  ,Opp_Cnt 
+FROM Opp_Data2 O
+WHERE
+ O.Year = PY2
+)
+
+,PriorYear1 AS (
+SELECT
+  O.EOM_ClosedDT	
+  ,O.Year
+  ,O.Month
+  ,O.AgyMrk
+  -- ,O.Class
+  -- ,O.GL
+  -- ,O.GL_Nm
+  ,O.Category
+  ,O.Opp_Value AS OppVal_PY1
+  ,Opp_Cnt 
+FROM Opp_Data2 O
+WHERE
+ O.Year = PY1
+)
+
+,CurrentYear AS (
+SELECT
+  O.EOM_ClosedDT	
+  ,O.Year
+  ,O.Month
+  ,O.AgyMrk
+  -- ,O.Class
+  -- ,O.GL
+  -- ,O.GL_Nm
+  ,O.Category
+  ,O.Opp_Value AS OppVal_CY 
+  ,Opp_Cnt 
+FROM Opp_Data2 O
+WHERE
+  O.Year = CY
+  AND O.Month <= MaxMonth
+ )
+
+-- ,test AS (
+SELECT
+  P1.EOM_ClosedDT
+  ,P1.Year
+  ,P1.Month
+  ,P1.AgyMrk
+  -- ,P1.Class
+  ,NUll AS Class
+  ,NULL AS GL -- ,IFNULL(P1.GL, P2.GL) AS GL
+  ,NULL AS GL_Nm -- ,IFNULL(P1.GL_Nm, P2.GL_Nm) AS GL_Nm
+  ,P1.Category
+  ,ROUND(P1.OppVal_PY1,2) AS OppVal
+  ,P1.Opp_Cnt
+  ,ROUND(SAFE_DIVIDE(P1.OppVal_PY1, P1.Opp_Cnt),2) AS OppAvg
+FROM PriorYear1 P1
+-- ORDER BY 
+--   Year DESC
+--   ,MONTH DESC
+--   ,AgyMrk DESC
+--   ,GL DESC
+--   ,Class
+-- )
+
+
+UNION ALL
+-- ,test2 AS (
+SELECT
+  C.EOM_ClosedDT
+  ,C.Year
+  ,C.Month
+  ,C.AgyMrk
+  -- ,C.Class
+  ,NUll AS Class
+  ,NULL AS GL -- ,IFNULL(C.GL, P2.GL) AS GL
+  ,NULL AS GL_Nm -- ,IFNULL(C.GL_Nm, P2.GL_Nm) AS GL_Nm
+  ,C.Category
+  ,ROUND(C.OppVal_CY,2) AS OppVal
+  ,C.Opp_Cnt
+  ,ROUND(SAFE_DIVIDE(C.OppVal_CY, C.Opp_Cnt),2) AS OppAvg
+FROM CurrentYear C
+ORDER BY 
+  Year DESC
+  ,Month DESC
+  ,AgyMrk DESC
+  ,GL DESC
+  ,Class
+
+
+
+;END;
+
+
+
+
+

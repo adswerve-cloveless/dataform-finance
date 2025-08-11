@@ -1,3 +1,13 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Looker",
+  name: "BI_MediaPodsKpi"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Looker.BI_MediaPodsKpi`()
+OPTIONS (strict_mode=false)
+BEGIN
 
 DECLARE MaxReportDt,MaxReportDt_PY, CY_Start, PY_Start  DATE;
 SET MaxReportDt = `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`();
@@ -361,3 +371,4 @@ SELECT * FROM MediaSrv_YTD
 UNION ALL
 SELECT * FROM MediaSrv_YTD_PY
 
+;END;
