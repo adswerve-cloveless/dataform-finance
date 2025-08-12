@@ -80,7 +80,7 @@ WHERE
   StageName = "Closed Won"
   AND CAST(O.CloseDate AS DATE) >= Data_START
   AND CAST(O.CloseDate AS DATE) <= DATA_END 
-  
+  AND O.RecordTypeId <> "0124M000000XA5MQAW"  --updated 8/12/2025
 GROUP BY ALL
 -- ORDER BY 
 --  EOM_CreatedDT DESC
