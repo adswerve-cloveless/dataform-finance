@@ -250,6 +250,18 @@ WHERE
   AND NOT REGEXP_CONTAINS(NS_Project_ID,"Commission|DV360")
   AND (IFNULL(Def_Balance,0) + IFNULL(YTD_Rev,0)) <> 0
 
+
+UNION ALL
+
+SELECT 
+  NS_Project_ID	
+  ,Project_name 
+  ,"Bundled Services" AS Audit
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs` 
+WHERE  
+  Project_Type = "Bundled Services"
+
+
 )
 ;''';
 
