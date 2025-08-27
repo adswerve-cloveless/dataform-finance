@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "GA4_OverrideTbl"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` 
+(
+    Parent_ID INT64
+    ,Acct_Nbr STRING
+    ,Renew_StartDT DATE	
+    ,Renew_EndDT DATE	
+    ,Term_DT DATE	
+    ,Overage_Margin	FLOAT64
+    ,Renew_Prob	STRING
+    ,Teir_Change STRING
+    ,New_Platform_Rate FLOAT64
+    ,Notes	STRING
+    ,Check_ INT64
+
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1yYj9CehPkpT3rO4UJ6AcYEKv5ZMled2_S70z5o7ogvg'] --Update as needed
+  ,sheet_range = 'Overrides!B9:L50'  --Sheet Name
+  ,skip_leading_rows = 0
+  --,header = 0
+)
