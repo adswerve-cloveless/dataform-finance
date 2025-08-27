@@ -261,7 +261,6 @@ FROM `adswerve-finance-reporting.Fin_Fcst_Module.Services_ExistingProjs`
 WHERE  
   Project_Type = "Bundled Services"
 
-
 )
 ;''';
 
