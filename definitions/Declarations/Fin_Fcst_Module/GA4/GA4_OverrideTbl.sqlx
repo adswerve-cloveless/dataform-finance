@@ -8,13 +8,13 @@ config {
 
 CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` 
 (
-    Parent_ID INT64
+    Parent_ID STRING
     ,Acct_Nbr STRING
     ,Renew_StartDT DATE	
     ,Renew_EndDT DATE	
     ,Term_DT DATE	
     ,Overage_Margin	FLOAT64
-    ,Renew_Prob	STRING
+    ,Renewal_Probability	STRING
     ,Teir_Change STRING
     ,New_Platform_Rate FLOAT64
     ,Notes	STRING
