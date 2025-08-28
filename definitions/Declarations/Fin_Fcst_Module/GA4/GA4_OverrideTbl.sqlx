@@ -16,16 +16,17 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4
     ,Overage_Margin	FLOAT64
     ,Renewal_Probability	STRING
     ,Teir_Change STRING
+    ,Teir_ChangeDT DATE
     ,New_Platform_Rate FLOAT64
-    ,Notes	STRING
     ,Check_ INT64
+    ,Notes	STRING
 
 
 )
 OPTIONS (
   format = 'GOOGLE_SHEETS'
   ,uris =  ['https://docs.google.com/spreadsheets/d/1yYj9CehPkpT3rO4UJ6AcYEKv5ZMled2_S70z5o7ogvg'] --Update as needed
-  ,sheet_range = 'Overrides!B9:L50'  --Sheet Name
+  ,sheet_range = 'Overrides!B9:M50'  --Sheet Name
   ,skip_leading_rows = 0
   --,header = 0
 )
