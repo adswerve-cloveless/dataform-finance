@@ -25,7 +25,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4
 )
 OPTIONS (
   format = 'GOOGLE_SHEETS'
-  ,uris =  ['https://docs.google.com/spreadsheets/d/1yYj9CehPkpT3rO4UJ6AcYEKv5ZMled2_S70z5o7ogvg'] --Update as needed
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1rsx8tBK8g2nhFWEOk3m59deRls3nexvrix0Uq9gnd5s'] --Update as needed
   ,sheet_range = 'Overrides!B9:M50'  --Sheet Name
   ,skip_leading_rows = 0
   --,header = 0
