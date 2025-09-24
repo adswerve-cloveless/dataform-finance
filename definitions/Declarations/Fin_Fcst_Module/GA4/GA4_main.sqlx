@@ -1,0 +1,621 @@
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`(Report_Period DATE)
+BEGIN
+--`adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`
+
+
+--Notes 
+/*
+1) SalesForce data is done at the customer level, but we are forecasting at the Parent Level. 
+2) LMC is messy case becuase: 
+  a) Platform Revenue and Overage Revenue is at the Customer level, but Reseller Fees are accounted for at the Parent Level.
+  b) LMC renewals are done at the customer level not the parent level
+*/
+
+-- Step 1: Declare variables and set the main reporting period
+-- DECLARE Report_Period DATE DEFAULT '2025-08-01';
+DECLARE PY_Start, CY_Start, CY_End, NY_Start, NY_End DATE;
+DECLARE Period_List, Period_List2, Period_List3, SumPeriods, OverageFee_Periods, PlatformFee_Periods, PlatformMarginPct_Periods STRING;
+DECLARE SQL1, SQL2, SQL3, SQL4, SQL5, SQL6, SQL7, SQL8, SQL9, SQL10, SQL11, SQL12 STRING;
+
+-- Determine the start of the calendar year based on the report period
+SET CY_Start = DATE(EXTRACT(YEAR FROM Report_Period),1,1);
+SET CY_End = DATE(EXTRACT (YEAR FROM CY_Start),12,1);
+SET NY_Start = DATE(EXTRACT(YEAR FROM Report_Period)+1,1,1);
+SET NY_End = DATE(EXTRACT (YEAR FROM CY_Start)+1,12,1);
+SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
+
+
+SET Period_List =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+SET Period_List2 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET Period_List3 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("IFNULL(%b_%Y,0) AS %b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET SumPeriods =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("SUM(IFNULL(%b_%Y,0)) AS %b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET OverageFee_Periods =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("-ROUND(SAFE_MULTIPLY(A.%b_%Y,(1-S.OverageMargin)),4) AS %b_%Y ",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+SET PlatformFee_Periods =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("ROUND(IFNULL(SAFE_SUBTRACT(A.%b_%Y,IFNULL(O.%b_%Y,0)),0),4) AS %b_%Y ",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET PlatformMarginPct_Periods =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("ROUND(IFNULL(SAFE_DIVIDE(SAFE_ADD(A.%b_%Y,F.%b_%Y),A.%b_%Y),0),4) AS %b_%Y ",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+-- Get Actuals Data 
+-------------------------------------------------------------
+CREATE OR REPLACE TEMP TABLE Actuals AS 
+(
+SELECT
+  FORMAT_DATE("%b_%Y",R.Period) AS Period --_Str
+  ,R.Parent_Nm
+  ,R.Parent_ID
+  ,R.AgencyOrMarketer AS AgyMrk
+  ,LEFT(R.Account,5) AS Acct_Nbr
+  ,REGEXP_EXTRACT(R.Account, r':\s([^:]+)$') AS Acct_Nm
+  ,SUM(R.Amount_Net_CY) AS Amt
+FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard` R
+WHERE
+  Period >= PY_Start
+  AND Period <= Report_Period
+  AND REGEXP_CONTAINS(MvA_LineItem,"GA4 Revenue")
+  AND Parent_Nm <> ""
+  AND Parent_Nm IS NOT NULL
+GROUP BY ALL
+
+ORDER BY
+  Parent_Nm
+
+-- ORDER BY
+--   Period DESC
+--   ,Parent_Nm ASC
+--   ,Account ASC
+
+);
+
+
+-- Get Opportunity Renewal Data From SalesForce
+CREATE OR REPLACE TEMP TABLE OppData AS (
+WITH OppData_Base AS (  
+SELECT 
+  A.Name AS SF_Acct_Nm
+  ,O.AccountID AS SF_Acct_ID
+  ,A.NetSuite_ID__c AS Customer_ID --NetSuite_ID
+  ,C.Parent_ID
+  -- ,C.Internal_ID AS NS_Customer_ID
+  ,O.Name AS Opp_Nm
+  ,O.Product_Family__c
+  ,O.Product_Combine__c
+  ,O.Service__c
+  ,CAST(O.LastModifiedDate AS DATE) AS LastModifiedDate
+  ,O.RecordTypeId
+  ,R.Name AS RecortType
+  ,O.IsClosed
+  ,O.IsWon
+  ,O.Auto_Renew__c
+  ,O.StageName AS Status
+  ,O.Current_Pipeline_Stage__c
+  ,O.Customer_Termination_Window__c
+  ,O.Google_Funded__c
+  ,CAST(O.Contract_Start_Date__c AS DATE) AS Renew_StartDT
+  ,CAST(O.Contract_End_Date__c AS DATE) AS Renew_EndDT
+  ,T.Date_of_Termination__c AS Term_DT
+  ,O.Renewal_Probability__c AS Renewal_Probability
+  ,O.Opportunity_Description__c
+  ,ROW_NUMBER() OVER (PARTITION BY A.Name ORDER BY A.Name,O.Contract_Start_Date__c  DESC  ) AS RwNum
+FROM `adswerve-sfdc.Warehouse.opportunity` O
+LEFT JOIN `adswerve-sfdc.Warehouse.recordType` R ON O.RecordTypeId = R.ID
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON A.NetSuite_ID__c = C.internal_id
+LEFT JOIN `adswerve-sfdc.Warehouse.termination` T ON 
+  O.AccountId = T.Account__c
+  AND O.Product_Family__c = T.Product_Family__c
+  AND O.Service__c = T.Service__c
+WHERE
+  O.Product_Family__c = "Google Analytics 4"
+  AND O.Service__c IN ("Platform (Self Service)","Platform (Managed Service)")
+  AND O.RecordTypeId = "0124M000000XA5MQAW"
+QUALIFY
+  RwNum =1
+ORDER BY
+  O.Name ASC
+  ,O.Contract_Start_Date__c
+) 
+
+--Identify Parents that have more than 1 child with a renewal.
+,ProblemParents AS (
+SELECT 
+  Parent_ID
+  ,"T" AS ProblemParent_Flag
+  ,COUNT(Opp_Nm) AS Opp_Cnt
+FROM OppData_Base
+GROUP BY ALL
+HAVING
+  Opp_Cnt >1
+)
+
+SELECT 
+  O.* EXCEPT (RwNum)
+  ,IFNULL(P.ProblemParent_Flag,"F") AS ProblemParent_Flag
+  ,ROW_NUMBER() OVER (PARTITION BY O.Parent_ID ORDER BY O.Parent_ID  DESC  ) AS RwNum
+FROM OppData_Base O 
+LEFT JOIN ProblemParents P ON O.Parent_ID = P.Parent_ID
+-- WHERE
+--   ProblemParent_Flag = "T"
+QUALIFY RwNum = 1
+ORDER BY 
+  Parent_ID
+  ,RwNum
+);
+
+
+--Pivot Actuals by Month_Year
+SET SQL1 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE ActualsPvt AS
+WITH Actual_1 AS (
+SELECT 
+  *
+FROM Actuals
+PIVOT( SUM(Amt)  FOR Period IN(%s)) 
+ORDER BY 
+  Parent_Nm
+)
+
+SELECT 
+  Parent_Nm	
+  ,Parent_ID	
+  ,AgyMrk	
+  ,Acct_Nbr	
+  ,Acct_Nm
+  ,%s
+FROM Actual_1
+
+''',Period_List,Period_List3); 
+
+--Create Distinct List of Accounts and add values for Subtotals and Margins 
+SET SQL2 ='''
+CREATE OR REPLACE TEMP TABLE Accounts AS
+SELECT 
+  DISTINCT
+  A.Acct_Nbr
+FROM Actuals A
+UNION ALL
+SELECT 'Subtotal' AS Acct_Nbr
+UNION ALL
+SELECT 'Platform - Margin' AS Acct_Nbr
+UNION ALL
+SELECT "Platform Reseller Fees"
+UNION ALL
+SELECT "Overage Reseller Fees"
+UNION ALL
+SELECT 'Overage - Margin' AS Acct_Nbr
+;  
+'''; 
+
+
+--Create Joiner Table that has all Parents, Accounts, and Month_Years
+SET SQL3 = '''
+CREATE OR REPLACE TEMP TABLE Joiner AS
+SELECT 
+  DISTINCT
+  P.Parent_Nm
+  ,P.Parent_ID 
+  ,P.AgyMrk
+  ,A.Acct_Nbr
+FROM ActualsPvt P
+CROSS JOIN Accounts A
+ORDER BY 
+  Parent_Nm
+  ,CASE 
+    WHEN Acct_Nbr = 'Overage - Margin' THEN 5
+    WHEN Acct_Nbr = 'Overage Reseller Fees' THEN 4
+    WHEN Acct_Nbr = 'Platform - Margin' THEN 3
+    WHEN Acct_Nbr = 'Platform Reseller Fees' THEN 2
+    WHEN Acct_Nbr = 'Subtotal' THEN 1 
+    ELSE 0 END
+  ,Acct_Nbr
+;
+'''; 
+
+
+--Calculate Subtotals(Net Revenue) By Parent
+SET SQL4 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE NetRevenue AS
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID	
+  ,A.AgyMrk
+  ,"Subtotal" AS Acct_Nbr
+  ,"Net Revenue" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+GROUP BY ALL
+ORDER BY
+  Parent_Nm	
+  ,Parent_ID
+''',SumPeriods);
+
+
+-- Create GA4 Overage Margin Schedule Table with Override Intigration, Assume 40% Margin
+SET SQL5 = '''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule` AS
+SELECT
+  DISTINCT
+  J.Parent_ID
+  ,J.Parent_Nm
+  ,IFNULL(O.Overage_Margin,0.4) AS OverageMargin	
+FROM Joiner J
+LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` O ON 
+  J.Parent_ID = O.Parent_ID
+  AND O.Parent_ID IS NOT NULL
+ORDER BY 
+  J.Parent_Nm
+''';
+
+
+--Calculate Overage Reseller Fees
+SET SQL6 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE OverageFees AS
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID
+  ,A.AgyMrk
+  ,"Overage Reseller Fees" AS Acct_Nbr
+  ,"Overage Reseller Fees" AS Acct_Nm
+  -- ,S.OverageMargin
+  ,%s
+FROM ActualsPvt A
+LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule` S
+  ON A.Parent_ID = S.Parent_ID
+WHERE 
+  Acct_Nbr = "42131"
+ORDER BY
+  Parent_Nm	
+''',OverageFee_Periods);
+
+
+--Calculate Platform Reseller Fees
+SET SQL7 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE PlatformFees AS
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID	
+  ,A.AgyMrk
+  ,"Platform Reseller Fees" AS Acct_Nbr
+  ,"Platform Reseller Fees" AS Acct_Nm
+  -- ,A.Jan_2025 AS Jan2025_Total_ResellFees
+  -- ,O.Jan_2025 AS Jan2025_OverageFees
+  -- ,A.Jan_2025-IFNULL(O.Jan_2025,0) AS Jan2025_PlatformFees
+  ,%s
+FROM ActualsPvt A
+LEFT JOIN OverageFees O ON A.Parent_ID = O.Parent_ID
+WHERE 
+  A.Acct_Nbr = "51101"
+ORDER BY
+  Parent_Nm	
+''',PlatformFee_Periods);
+
+--Calulate Platform Margin Percentage
+SET SQL8 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE PlatformMarginPct AS
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID
+  ,A.AgyMrk
+  ,"Platform - Margin" AS Acct_Nbr
+  ,"Platform - Margin" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+LEFT JOIN PlatformFees F ON A.Parent_ID = F.Parent_ID
+WHERE 
+  A.Acct_Nbr = "42130"
+ORDER BY
+  Parent_Nm	
+''',PlatformMarginPct_Periods);
+
+--Calulate Overage Margin Percentage
+SET SQL9 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE OverageMarginPct AS
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID
+  ,A.AgyMrk
+  ,"Overage - Margin" AS Acct_Nbr
+  ,"Overage - Margin" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+LEFT JOIN OverageFees F ON A.Parent_ID = F.Parent_ID
+WHERE 
+  A.Acct_Nbr = "42131"
+ORDER BY
+  Parent_Nm	
+''',PlatformMarginPct_Periods);
+
+
+--Combine Data from all souces and temp tables into output for Google Sheets
+SET SQL10 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE Consolidate AS
+
+SELECT 
+  A.Parent_Nm
+  ,A.Parent_ID
+  ,A.Acct_Nbr
+  ,A.Acct_Nm  
+  ,%s
+FROM ActualsPvt A
+
+UNION ALL 
+
+SELECT 
+  N.Parent_Nm
+  ,N.Parent_ID
+  ,N.Acct_Nbr
+  ,N.Acct_Nm
+  ,%s  
+FROM NetRevenue N
+
+UNION ALL 
+
+SELECT 
+  PF.Parent_Nm
+  ,PF.Parent_ID
+  ,PF.Acct_Nbr
+  ,PF.Acct_Nm
+  ,%s  
+FROM PlatformFees PF
+
+UNION ALL 
+
+SELECT 
+  PM.Parent_Nm
+  ,PM.Parent_ID
+  ,PM.Acct_Nbr
+  ,PM.Acct_Nm
+  ,%s  
+FROM PlatformMarginPct PM
+
+UNION ALL 
+
+SELECT 
+  OVF.Parent_Nm
+  ,OVF.Parent_ID
+  ,OVF.Acct_Nbr
+  ,OVF.Acct_Nm
+  ,%s  
+FROM OverageFees OVF
+
+UNION ALL 
+
+SELECT 
+  OM.Parent_Nm
+  ,OM.Parent_ID
+  ,OM.Acct_Nbr
+  ,OM.Acct_Nm
+  ,%s  
+FROM OverageMarginPct OM
+
+
+ORDER BY
+  Parent_Nm
+  ,CASE 
+    WHEN Acct_Nbr = 'Overage - Margin' THEN 5
+    WHEN Acct_Nbr = 'Overage Reseller Fees' THEN 4
+    WHEN Acct_Nbr = 'Platform - Margin' THEN 3
+    WHEN Acct_Nbr = 'Platform Reseller Fees' THEN 2
+    WHEN Acct_Nbr = 'Subtotal' THEN 1 
+    ELSE 0 END
+  ,Acct_Nbr
+
+'''
+,Period_List2
+,Period_List2
+,Period_List2
+,Period_List2
+,Period_List2
+,Period_List2);
+
+
+--Layer In additional required fields required for Google Sheet Macros and remaining override intigration
+SET SQL11 = FORMAT('''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` AS 
+SELECT 
+  C.Parent_Nm
+  ,C.Parent_ID
+  ,S.ProblemParent_Flag
+  ,C.Acct_Nbr
+  ,C.Acct_Nm
+  ,M.AgyMrk
+  ,IFNULL(O.Renew_StartDT, S.Renew_StartDT) AS Renew_StartDT
+  ,IFNULL(O.Renew_EndDT, S.Renew_EndDT) AS Renew_EndDT
+  ,IFNULL(O.Term_DT, S.Term_DT) AS Term_DT
+  ,IFNULL(O.Renewal_Probability, IFNULL(S.Renewal_Probability,"N/A")) AS Renewal_Probability
+  ,IFNULL(O.Overage_Margin,0.4) AS Overage_Margin
+  ,IFNULL(O.Teir_Change,"None") AS Teir_Change
+  ,O.Teir_ChangeDT
+  ,O.New_Platform_Rate
+  ,%s  
+FROM Consolidate C
+LEFT JOIN (SELECT DISTINCT Parent_ID, AgyMrk FROM Actuals) M ON
+  C.Parent_ID = M.Parent_ID
+
+LEFT JOIN OppData S ON 
+  C.Parent_ID = S.Parent_ID
+  -- AND S.RwNum = 1 -- Added to main temp table 
+
+LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` O ON
+  C.Parent_ID = O.Parent_ID
+
+ORDER BY
+  Parent_Nm
+  ,CASE 
+    WHEN Acct_Nbr = 'Overage - Margin' THEN 5
+    WHEN Acct_Nbr = 'Overage Reseller Fees' THEN 4
+    WHEN Acct_Nbr = 'Platform - Margin' THEN 3
+    WHEN Acct_Nbr = 'Platform Reseller Fees' THEN 2
+    WHEN Acct_Nbr = 'Subtotal' THEN 1 
+    ELSE 0 END
+  ,Acct_Nbr
+''',Period_List2);
+
+
+SET SQL12 = FORMAT('''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Actuals` AS 
+
+WITH Period_String AS (
+SELECT 
+  Period
+  ,Parent_Nm
+  ,Parent_ID
+  ,AgyMrk	
+  ,Acct_Nbr	
+  ,Acct_Nm	
+  ,Renew_StartDT	
+  ,Renew_EndDT	
+  ,Term_DT
+  ,Renewal_Probability
+  ,Overage_Margin
+  ,Teir_Change
+  ,Teir_ChangeDT
+  ,New_Platform_Rate
+  ,Amount
+  ,ProblemParent_Flag
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` B
+UNPIVOT (Amount FOR Period IN (%s))
+)
+
+SELECT 
+  PARSE_DATE('%%b %%e %%Y',CONCAT(LEFT(Period,3),' 1 ',RIGHT(Period,4) )) AS Period
+  ,Parent_Nm
+  ,Parent_ID	
+  ,AgyMrk	
+  ,Acct_Nbr	
+  ,Acct_Nm	
+  ,Renew_StartDT	
+  ,Renew_EndDT	
+  ,Term_DT
+  ,Renewal_Probability
+  ,Overage_Margin AS Overage_Margin_Default
+  ,Teir_Change
+  ,Teir_ChangeDT
+  ,New_Platform_Rate
+  ,Amount
+  ,ProblemParent_Flag
+FROM Period_String
+
+''',Period_List2);
+
+
+
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+EXECUTE IMMEDIATE SQL3;
+EXECUTE IMMEDIATE SQL4;
+EXECUTE IMMEDIATE SQL5;
+EXECUTE IMMEDIATE SQL6;
+EXECUTE IMMEDIATE SQL7;
+EXECUTE IMMEDIATE SQL8;
+EXECUTE IMMEDIATE SQL9;
+EXECUTE IMMEDIATE SQL10;
+EXECUTE IMMEDIATE SQL11;
+EXECUTE IMMEDIATE SQL12;
+
+SELECT * FROM Actuals;
+SELECT * FROM OppData;
+SELECT * FROM ActualsPvt;
+SELECT * FROM Accounts;
+SELECT * FROM Joiner;
+SELECT * FROM NetRevenue;
+SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule`;
+SELECT * FROM OverageFees;
+SELECT * FROM PlatformFees;
+SELECT * FROM PlatformMarginPct;
+SELECT * FROM OverageMarginPct;
+SELECT * FROM Consolidate;
+SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`;
+SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Actuals`;
+
+
+
+
+END
+
+
+
+
