@@ -14,7 +14,7 @@ DECLARE Table_Nm STRING;
 
 
 SET Table_Nm = CONCAT(
-                      "adswerve-finance-reporting.Fin_Fcst_Module.Fcst_GA4"--20240217");
+                      "adswerve-finance-reporting.Fin_Fcst_Module.Fcst_GA4_"--20240217");
                       ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
 
 
