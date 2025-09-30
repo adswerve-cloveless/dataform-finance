@@ -15,8 +15,8 @@ BEGIN
 -- Step 1: Declare variables and set the main reporting period
 -- DECLARE Report_Period DATE DEFAULT '2025-08-01';
 DECLARE PY_Start, CY_Start, CY_End, NY_Start, NY_End DATE;
-DECLARE Period_List, Period_List2, Period_List3, SumPeriods, OverageFee_Periods, PlatformFee_Periods, PlatformMarginPct_Periods STRING;
-DECLARE SQL1, SQL2, SQL3, SQL4, SQL5, SQL6, SQL7, SQL8, SQL9, SQL10, SQL11, SQL12 STRING;
+DECLARE Period_List, Period_List2, Period_List3, SumPeriods, OverageFee_Periods, PlatformFee_Periods, MarginPct_Periods STRING;
+DECLARE SQL1, SQL2, SQL3, SQL4, SQL5, SQL6, SQL7, SQL8, SQL9, SQL10, SQL11, SQL12, SQL13 STRING;
 
 -- Determine the start of the calendar year based on the report period
 SET CY_Start = DATE(EXTRACT(YEAR FROM Report_Period),1,1);
@@ -79,24 +79,11 @@ FROM(
     )
 );
 
-SET OverageFee_Periods =(
-SELECT STRING_AGG(Timeline)
-FROM( 
-      SELECT CAST( FORMAT_DATE("-ROUND(SAFE_MULTIPLY(A.%b_%Y,(1-S.OverageMargin)),4) AS %b_%Y ",X) AS STRING) AS Timeline
-      FROM UNNEST(
-                  GENERATE_DATE_ARRAY(
-                                        PY_START
-                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
-                                        ,INTERVAL 1 MONTH)  
-                  ) AS X
-    )
-);
-
 
 SET PlatformFee_Periods =(
 SELECT STRING_AGG(Timeline)
 FROM( 
-      SELECT CAST( FORMAT_DATE("ROUND(IFNULL(SAFE_SUBTRACT(A.%b_%Y,IFNULL(O.%b_%Y,0)),0),4) AS %b_%Y ",X) AS STRING) AS Timeline
+      SELECT CAST( FORMAT_DATE("-ROUND(             IF( IFNULL(C.%b_%Y,0)=0 ,-R.%b_%Y,            SAFE_MULTIPLY(A.%b_%Y,(1-P.PlatformMargin))       )  ,4) AS %b_%Y ",X) AS STRING) AS Timeline
       FROM UNNEST(
                   GENERATE_DATE_ARRAY(
                                         PY_START
@@ -106,7 +93,21 @@ FROM(
     )
 );
 
-SET PlatformMarginPct_Periods =(
+SET OverageFee_Periods =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("ROUND(IFNULL(SAFE_SUBTRACT(A.%b_%Y,IFNULL(P.%b_%Y,0)),0),4) AS %b_%Y ",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        PY_START
+                                        ,NY_End --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+
+SET MarginPct_Periods =(
 SELECT STRING_AGG(Timeline)
 FROM( 
       SELECT CAST( FORMAT_DATE("ROUND(IFNULL(SAFE_DIVIDE(SAFE_ADD(A.%b_%Y,F.%b_%Y),A.%b_%Y),0),4) AS %b_%Y ",X) AS STRING) AS Timeline
@@ -313,14 +314,14 @@ ORDER BY
 ''',SumPeriods);
 
 
--- Create GA4 Overage Margin Schedule Table with Override Intigration, Assume 40% Margin
+-- Create GA4 Platform Margin Schedule Table with Override Intigration, Assume 40% Margin
 SET SQL5 = '''
-CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule` AS
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_PlatformMarginSchedule` AS
 SELECT
   DISTINCT
   J.Parent_ID
   ,J.Parent_Nm
-  ,IFNULL(O.Overage_Margin,0.4) AS OverageMargin	
+  ,IFNULL(O.Platform_Margin,0.4) AS PlatformMargin	
 FROM Joiner J
 LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` O ON 
   J.Parent_ID = O.Parent_ID
@@ -330,8 +331,59 @@ ORDER BY
 ''';
 
 
---Calculate Overage Reseller Fees
+--Calculate Platform Reseller Fees
 SET SQL6 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE PlatformFees AS
+WITH CheckForOvg AS (
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID
+  ,A.AgyMrk
+  ,"Overage Reseller Fees" AS Acct_Nbr
+  ,"Overage Reseller Fees" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+WHERE 
+  A.Acct_Nbr = "42131"
+)
+
+,ResellerAmt AS (
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID
+  ,A.AgyMrk
+  ,"Overage Reseller Fees" AS Acct_Nbr
+  ,"Overage Reseller Fees" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+WHERE 
+  A.Acct_Nbr = "51101"
+)
+
+SELECT 
+  A.Parent_Nm	
+  ,A.Parent_ID	
+  ,A.AgyMrk
+  ,"Platform Reseller Fees" AS Acct_Nbr
+  ,"Platform Reseller Fees" AS Acct_Nm
+  ,%s
+FROM ActualsPvt A
+LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_PlatformMarginSchedule` P
+  ON A.Parent_ID = P.Parent_ID
+LEFT JOIN CheckForOvg C ON A.Parent_ID = C.Parent_ID
+LEFT JOIN ResellerAmt R ON A.Parent_ID = R.Parent_ID
+WHERE 
+  A.Acct_Nbr = "42130"
+ORDER BY
+  Parent_Nm	
+''',Period_List3
+   ,Period_List3
+   ,PlatformFee_Periods);
+
+
+
+--Calculate Overage Reseller Fees
+SET SQL7 = FORMAT('''
 CREATE OR REPLACE TEMP TABLE OverageFees AS
 SELECT 
   A.Parent_Nm	
@@ -339,38 +391,16 @@ SELECT
   ,A.AgyMrk
   ,"Overage Reseller Fees" AS Acct_Nbr
   ,"Overage Reseller Fees" AS Acct_Nm
-  -- ,S.OverageMargin
   ,%s
 FROM ActualsPvt A
-LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule` S
-  ON A.Parent_ID = S.Parent_ID
+LEFT JOIN PlatformFees P ON A.Parent_ID = P.Parent_ID
 WHERE 
-  Acct_Nbr = "42131"
+  A.Acct_Nbr = "51101"
 ORDER BY
   Parent_Nm	
 ''',OverageFee_Periods);
 
 
---Calculate Platform Reseller Fees
-SET SQL7 = FORMAT('''
-CREATE OR REPLACE TEMP TABLE PlatformFees AS
-SELECT 
-  A.Parent_Nm	
-  ,A.Parent_ID	
-  ,A.AgyMrk
-  ,"Platform Reseller Fees" AS Acct_Nbr
-  ,"Platform Reseller Fees" AS Acct_Nm
-  -- ,A.Jan_2025 AS Jan2025_Total_ResellFees
-  -- ,O.Jan_2025 AS Jan2025_OverageFees
-  -- ,A.Jan_2025-IFNULL(O.Jan_2025,0) AS Jan2025_PlatformFees
-  ,%s
-FROM ActualsPvt A
-LEFT JOIN OverageFees O ON A.Parent_ID = O.Parent_ID
-WHERE 
-  A.Acct_Nbr = "51101"
-ORDER BY
-  Parent_Nm	
-''',PlatformFee_Periods);
 
 --Calulate Platform Margin Percentage
 SET SQL8 = FORMAT('''
@@ -388,7 +418,7 @@ WHERE
   A.Acct_Nbr = "42130"
 ORDER BY
   Parent_Nm	
-''',PlatformMarginPct_Periods);
+''',MarginPct_Periods);
 
 --Calulate Overage Margin Percentage
 SET SQL9 = FORMAT('''
@@ -406,7 +436,7 @@ WHERE
   A.Acct_Nbr = "42131"
 ORDER BY
   Parent_Nm	
-''',PlatformMarginPct_Periods);
+''',MarginPct_Periods);
 
 
 --Combine Data from all souces and temp tables into output for Google Sheets
@@ -506,11 +536,12 @@ SELECT
   ,IFNULL(O.Renew_EndDT, S.Renew_EndDT) AS Renew_EndDT
   ,IFNULL(O.Term_DT, S.Term_DT) AS Term_DT
   ,IFNULL(O.Renewal_Probability, IFNULL(S.Renewal_Probability,"N/A")) AS Renewal_Probability
-  ,IFNULL(O.Overage_Margin,0.4) AS Overage_Margin
+  ,IFNULL(O.Platform_Margin,0.4) AS Platform_Margin
   ,IFNULL(O.Teir_Change,"None") AS Teir_Change
   ,O.Teir_ChangeDT
   ,O.New_Platform_Rate
   ,%s  
+  ,S.Status
 FROM Consolidate C
 LEFT JOIN (SELECT DISTINCT Parent_ID, AgyMrk FROM Actuals) M ON
   C.Parent_ID = M.Parent_ID
@@ -550,7 +581,7 @@ SELECT
   ,Renew_EndDT	
   ,Term_DT
   ,Renewal_Probability
-  ,Overage_Margin
+  ,Platform_Margin
   ,Teir_Change
   ,Teir_ChangeDT
   ,New_Platform_Rate
@@ -571,7 +602,7 @@ SELECT
   ,Renew_EndDT	
   ,Term_DT
   ,Renewal_Probability
-  ,Overage_Margin AS Overage_Margin_Default
+  ,Platform_Margin AS Platform_Margin_Default
   ,Teir_Change
   ,Teir_ChangeDT
   ,New_Platform_Rate
@@ -581,7 +612,34 @@ FROM Period_String
 
 ''',Period_List2);
 
+-- SET SQL13 = FORMAT('''
+-- CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Termination_Rpt
+-- SELECT 
+--   B.Parent_Nm
+--   ,B.Term_DT
+--   ,IF(B.Status = "Closed Lost", B.Status, "Probability: Low") AS Terminated_Type 
+  
+--   ,%s  
+-- FROM GA4_Base B
+-- LEFT JOIN OppData S ON 
+--   C.Parent_ID = S.Parent_ID
+--   -- AND S.RwNum = 1 -- Added to main temp table 
 
+-- LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` O ON
+--   C.Parent_ID = O.Parent_ID
+
+-- ORDER BY
+--   AgyMrk
+--   ,Parent_Nm
+--   ,CASE 
+--     WHEN Acct_Nbr = 'Overage - Margin' THEN 5
+--     WHEN Acct_Nbr = 'Overage Reseller Fees' THEN 4
+--     WHEN Acct_Nbr = 'Platform - Margin' THEN 3
+--     WHEN Acct_Nbr = 'Platform Reseller Fees' THEN 2
+--     WHEN Acct_Nbr = 'Subtotal' THEN 1 
+--     ELSE 0 END
+--   ,Acct_Nbr
+-- ''',Period_List2);
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
@@ -595,21 +653,23 @@ EXECUTE IMMEDIATE SQL9;
 EXECUTE IMMEDIATE SQL10;
 EXECUTE IMMEDIATE SQL11;
 EXECUTE IMMEDIATE SQL12;
+-- EXECUTE IMMEDIATE SQL13;
 
-SELECT * FROM Actuals;
-SELECT * FROM OppData;
-SELECT * FROM ActualsPvt;
-SELECT * FROM Accounts;
-SELECT * FROM Joiner;
-SELECT * FROM NetRevenue;
-SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverageMarginSchedule`;
+--Bug Testing -------------------
+-- SELECT * FROM Actuals;
+-- SELECT * FROM OppData;
+-- SELECT * FROM ActualsPvt;
+-- SELECT * FROM Accounts;
+-- SELECT * FROM Joiner;
+-- SELECT * FROM NetRevenue;
+-- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_PlatformSchedule`;
 SELECT * FROM OverageFees;
 SELECT * FROM PlatformFees;
 SELECT * FROM PlatformMarginPct;
 SELECT * FROM OverageMarginPct;
-SELECT * FROM Consolidate;
-SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`;
-SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Actuals`;
+-- SELECT * FROM Consolidate;
+-- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`;
+-- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Actuals`;
 
 
 

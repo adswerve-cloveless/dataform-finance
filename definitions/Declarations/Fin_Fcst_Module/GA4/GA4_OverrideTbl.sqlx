@@ -13,7 +13,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4
     ,Renew_StartDT DATE	
     ,Renew_EndDT DATE	
     ,Term_DT DATE	
-    ,Overage_Margin	FLOAT64
+    ,Platform_Margin	FLOAT64
     ,Renewal_Probability	STRING
     ,Teir_Change STRING
     ,Teir_ChangeDT DATE
