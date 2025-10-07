@@ -15,8 +15,8 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4
     ,Term_DT DATE	
     ,Platform_Margin	FLOAT64
     ,Renewal_Probability	STRING
-    ,Teir_Change STRING
-    ,Teir_ChangeDT DATE
+    ,Tier_Change STRING
+    ,Tier_ChangeDT DATE
     ,New_Platform_Rate FLOAT64
     ,Check_ INT64
     ,Notes	STRING

@@ -28,20 +28,29 @@ FROM(
     )
 );
 
-
+SET SQL1 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE GA4_RateChangeRpt AS 
 SELECT 
-    Parent_Nm
-    ,Acct_Nbr
-    ,Acct_Nm
-    ,AgyMrk
-    ,Renew_StartDT
-    ,Renewal_Probability
-    ,
-FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`
+    B.Parent_Nm
+    ,B.Acct_Nbr
+    ,B.Acct_Nm
+    ,B.AgyMrk
+    ,B.Renew_StartDT
+    ,B.Renewal_Probability
+    ,B.Tier_ChangeDT
+    ,B.New_Platform_Rate
+    ,B.Status
+    ,B.Term_DT
+    ,%s
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` B
+WHERE
+    B.Renewal_Probability <> "Low"
+ 
+ 
+''',Period_List);
 
 
+EXECUTE IMMEDIATE SQL1;
 
-
-
-
+SELECT * FROM GA4_RateChangeRpt;
 -- END
