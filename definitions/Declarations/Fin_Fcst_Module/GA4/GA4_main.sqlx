@@ -612,34 +612,7 @@ FROM Period_String
 
 ''',Period_List2);
 
--- SET SQL13 = FORMAT('''
--- CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Termination_Rpt
--- SELECT 
---   B.Parent_Nm
---   ,B.Term_DT
---   ,IF(B.Status = "Closed Lost", B.Status, "Probability: Low") AS Terminated_Type 
-  
---   ,%s  
--- FROM GA4_Base B
--- LEFT JOIN OppData S ON 
---   C.Parent_ID = S.Parent_ID
---   -- AND S.RwNum = 1 -- Added to main temp table 
 
--- LEFT JOIN `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl` O ON
---   C.Parent_ID = O.Parent_ID
-
--- ORDER BY
---   AgyMrk
---   ,Parent_Nm
---   ,CASE 
---     WHEN Acct_Nbr = 'Overage - Margin' THEN 5
---     WHEN Acct_Nbr = 'Overage Reseller Fees' THEN 4
---     WHEN Acct_Nbr = 'Platform - Margin' THEN 3
---     WHEN Acct_Nbr = 'Platform Reseller Fees' THEN 2
---     WHEN Acct_Nbr = 'Subtotal' THEN 1 
---     ELSE 0 END
---   ,Acct_Nbr
--- ''',Period_List2);
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
@@ -663,10 +636,10 @@ EXECUTE IMMEDIATE SQL12;
 -- SELECT * FROM Joiner;
 -- SELECT * FROM NetRevenue;
 -- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_PlatformSchedule`;
-SELECT * FROM OverageFees;
-SELECT * FROM PlatformFees;
-SELECT * FROM PlatformMarginPct;
-SELECT * FROM OverageMarginPct;
+-- SELECT * FROM OverageFees;
+-- SELECT * FROM PlatformFees;
+-- SELECT * FROM PlatformMarginPct;
+-- SELECT * FROM OverageMarginPct;
 -- SELECT * FROM Consolidate;
 -- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`;
 -- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Actuals`;

@@ -289,7 +289,7 @@ SELECT
   ,R.Account
   ,SUM(Amount_Gross) AS Amount_Gross
   ,SUM(Amount_Net) AS Amount_Net
-FROM `adswerve-finance.FinancialReporting.Revenue_DataDump` R
+FROM `adswerve-finance.FinancialReporting.Report_DataDump` R
 LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
   R.Period >= CY_START
@@ -608,7 +608,7 @@ SELECT
   ,CAST(NULL AS STRING) AS Currency
   , "F" AS IN_SF_NotInNS
 
-FROM `adswerve-finance.FinancialReporting.Revenue_DataDump` R
+FROM `adswerve-finance.FinancialReporting.Report_DataDump` R
 LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
   REGEXP_CONTAINS(R.Account,"41117|43175")
@@ -926,7 +926,7 @@ SELECT
   ,R.Customer_ID AS NS_Customer_ID
   ,R.Customer_Nm
   ,SUM(Amount_Gross) AS Amt_Gross
-FROM `adswerve-finance.FinancialReporting.Revenue_DataDump` R
+FROM `adswerve-finance.FinancialReporting.Report_DataDump` R
 LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON R.Customer_ID = C.internal_id
 WHERE
   REGEXP_CONTAINS(R.Account,"41117|43175")
