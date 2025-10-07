@@ -537,8 +537,8 @@ SELECT
   ,IFNULL(O.Term_DT, S.Term_DT) AS Term_DT
   ,IFNULL(O.Renewal_Probability, IFNULL(S.Renewal_Probability,"N/A")) AS Renewal_Probability
   ,IFNULL(O.Platform_Margin,0.4) AS Platform_Margin
-  ,IFNULL(O.Teir_Change,"None") AS Teir_Change
-  ,O.Teir_ChangeDT
+  ,IFNULL(O.Tier_Change,"None") AS Tier_Change
+  ,O.Tier_ChangeDT
   ,O.New_Platform_Rate
   ,%s  
   ,S.Status
@@ -582,8 +582,8 @@ SELECT
   ,Term_DT
   ,Renewal_Probability
   ,Platform_Margin
-  ,Teir_Change
-  ,Teir_ChangeDT
+  ,Tier_Change
+  ,Tier_ChangeDT
   ,New_Platform_Rate
   ,Amount
   ,ProblemParent_Flag
@@ -603,8 +603,8 @@ SELECT
   ,Term_DT
   ,Renewal_Probability
   ,Platform_Margin AS Platform_Margin_Default
-  ,Teir_Change
-  ,Teir_ChangeDT
+  ,Tier_Change
+  ,Tier_ChangeDT
   ,New_Platform_Rate
   ,Amount
   ,ProblemParent_Flag
