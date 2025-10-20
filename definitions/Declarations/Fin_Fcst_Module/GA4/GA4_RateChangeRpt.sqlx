@@ -1,13 +1,13 @@
 
--- CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_RateChangeRpt`(Report_Period DATE)
--- BEGIN
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_RateChangeRpt`(Report_Period DATE)
+BEGIN
 
-DECLARE Period_List STRING;
-DECLARE SQL1 STRING;
+DECLARE Period_List, Period_List2 STRING;
+DECLARE SQL1, SQL2 STRING;
 
 DECLARE PY_Start, CY_Start, CY_End, NY_Start, NY_End DATE; 
 
-DECLARE Report_Period DATE DEFAULT '2025-08-01';
+-- DECLARE Report_Period DATE DEFAULT '2025-08-01';
 
 SET CY_Start = DATE(EXTRACT(YEAR FROM Report_Period),1,1);
 SET CY_End = DATE(EXTRACT (YEAR FROM CY_Start),12,1);
@@ -29,7 +29,7 @@ FROM(
 );
 
 SET SQL1 = FORMAT('''
-CREATE OR REPLACE TEMP TABLE GA4_RateChangeRpt AS 
+CREATE OR REPLACE TEMP TABLE BASE  AS 
 SELECT 
     B.Parent_Nm
     ,B.Acct_Nbr
@@ -37,20 +37,47 @@ SELECT
     ,B.AgyMrk
     ,B.Renew_StartDT
     ,B.Renewal_Probability
+    ,B.Tier_Change
     ,B.Tier_ChangeDT
     ,B.New_Platform_Rate
-    ,B.Status
-    ,B.Term_DT
+    -- ,B.Status
+    -- ,B.Term_DT
     ,%s
 FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` B
 WHERE
     B.Renewal_Probability <> "Low"
- 
+    AND B.Status <> "Closed Lost"
+    AND B.Acct_Nbr IN ("42130","Platform Reseller Fees")
  
 ''',Period_List);
 
 
-EXECUTE IMMEDIATE SQL1;
 
-SELECT * FROM GA4_RateChangeRpt;
--- END
+SET SQL1 = FORMAT('''
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_RateChangeRpt`  AS 
+SELECT 
+    B.Parent_Nm
+    ,B.Acct_Nbr
+    ,B.Acct_Nm
+    ,B.AgyMrk
+    ,B.Renew_StartDT
+    ,B.Renewal_Probability
+    ,B.Tier_Change
+    ,B.Tier_ChangeDT
+    ,B.New_Platform_Rate
+    -- ,B.Status
+    -- ,B.Term_DT
+    ,%s
+FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` B
+WHERE
+    B.Renewal_Probability <> "Low"
+    AND B.Status <> "Closed Lost"
+ 
+''',Period_List);
+
+
+
+EXECUTE IMMEDIATE SQL2;
+
+-- SELECT * FROM GA4_RateChangeRpt;
+END

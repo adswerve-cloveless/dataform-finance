@@ -1,6 +1,6 @@
 
-CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`(Report_Period DATE)
-BEGIN
+-- CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`(Report_Period DATE)
+-- BEGIN
 --`adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base`
 
 
@@ -647,7 +647,7 @@ EXECUTE IMMEDIATE SQL12;
 
 
 
-END
+-- END
 
 
 
