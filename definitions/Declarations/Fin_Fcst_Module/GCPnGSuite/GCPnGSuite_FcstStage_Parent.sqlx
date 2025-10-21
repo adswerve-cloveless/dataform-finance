@@ -2,15 +2,18 @@ config {
   type: "table",
   database: "adswerve-finance-reporting",
   schema: "Fin_Fcst_Module",
-  name: "Stage_GCPandGSuite"
+  name: "GCPnGSuite_FcstStage_Parent"
 }
 
 
-CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_GCPandGSuite` 
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_FcstStage_Parent` 
 (
-    Period DATE
-    ,Account STRING
-    ,MrkAgy STRING
+    Scenario STRING
+    ,Period DATE
+    ,Parent_Nm STRING
+    ,Parent_ID STRING
+    ,Acct_Nbr STRING
+    ,AgyMrk STRING
     ,Amount FLOAT64
     
 
@@ -19,7 +22,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
 OPTIONS (
   format = 'GOOGLE_SHEETS'
   ,uris =  ['https://docs.google.com/spreadsheets/d/1gD-63Ae-cfb_tMHbzg0qp2_bhpzxD0iIKtJS0PAFb8A'] --Update as needed
-  ,sheet_range = 'Fcst Upload!B4:E500'  --Sheet Name
+  ,sheet_range = 'Fcst Upload!K4:Q'  --Sheet Name
   ,skip_leading_rows = 0
   --,header = 0
 )

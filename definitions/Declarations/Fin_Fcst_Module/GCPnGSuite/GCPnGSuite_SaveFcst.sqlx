@@ -1,0 +1,48 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "GCPnGSuite_SaveFcst"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_SaveFcst`()
+BEGIN
+
+
+DECLARE SQL1,SQL2 STRING;
+DECLARE Table_Nm1,Table_Nm2 STRING;
+
+
+SET Table_Nm1 = CONCAT(
+                      "adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_SavedFcst_AgyMrk_"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+SET Table_Nm2 = CONCAT(
+                      "adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_SavedFcst_Parent_"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+SET SQL1 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              Table_Nm1,
+              ''' AS SELECT 
+              *
+              
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_FcstStage_AgyMrk` 
+              WHERE
+               Period IS NOT NULL;''');
+
+SET SQL2 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              Table_Nm2,
+              ''' AS SELECT 
+              *
+              
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_FcstStage_Parent` 
+              WHERE
+               Period IS NOT NULL;''');
+
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+
+
+END;

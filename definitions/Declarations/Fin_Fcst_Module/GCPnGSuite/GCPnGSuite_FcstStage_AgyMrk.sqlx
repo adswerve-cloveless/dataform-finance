@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "GCPnGSuite_FcstStage_AgyMrk"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GCPnGSuite_FcstStage_AgyMrk` 
+(
+    Scenario STRING
+    ,Period DATE
+    ,Account STRING
+    ,MrkAgy STRING
+    ,Amount FLOAT64
+    
+
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1gD-63Ae-cfb_tMHbzg0qp2_bhpzxD0iIKtJS0PAFb8A'] --Update as needed
+  ,sheet_range = 'Fcst Upload!E4:I'  --Sheet Name
+  ,skip_leading_rows = 0
+  --,header = 0
+)
+
