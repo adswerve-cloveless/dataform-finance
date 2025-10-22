@@ -524,6 +524,8 @@ ORDER BY
 
 --Layer In additional required fields required for Google Sheet Macros and remaining override intigration
 SET SQL11 = FORMAT('''
+SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.GA4_OverrideTbl`;
+
 CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.GA4_Base` AS 
 SELECT 
   C.Parent_Nm
