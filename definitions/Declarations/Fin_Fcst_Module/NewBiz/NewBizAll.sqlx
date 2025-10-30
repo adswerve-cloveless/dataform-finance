@@ -1,0 +1,8 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.NewBizALL`()
+BEGIN
+
+
+CALL `adswerve-finance.Fin_Routines.NewBizProjectsP1`();
+CALL `adswerve-finance.Fin_Routines.NewBizProjectsP2`();
+
+END;

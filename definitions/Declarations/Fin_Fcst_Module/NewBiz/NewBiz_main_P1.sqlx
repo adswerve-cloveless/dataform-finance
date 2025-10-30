@@ -1,0 +1,457 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.NewBizProjectsP1`()
+BEGIN
+
+CREATE OR REPLACE TEMP TABLE NewBizTemp AS
+
+--Step 1 [START] : Get Pipeline Data  ------------------------------------------------
+WITH SF_OppData AS(
+SELECT  
+  O.Name
+  ,Opportunity_Safe_ID__c AS SF_OpportunityID
+  ,O.AccountID
+  ,A.celigo_sfnsio__NetSuite_Id__c 
+  ,O.Current_Pipeline_Stage__c AS Pipeline_Stage
+  ,O.Product_Combine__c
+  ,O.Product_Family__c
+  ,O.Service__c
+  ,F.Class
+  ,CASE
+      WHEN REGEXP_CONTAINS(O.Service__c,"Retainer") THEN "Retainer"
+      WHEN REGEXP_CONTAINS(O.Service__c,"Block Hours") THEN "Block Hours"
+      WHEN REGEXP_CONTAINS(O.Service__c,"Rate Card") THEN "Rate Card"
+      WHEN REGEXP_CONTAINS(O.Service__c,"Platform") THEN NULL
+      ELSE "Fixed Bid"
+    END AS Project_Type
+  -- ,Pipeline__c
+  ,O.StageName
+  ,O.Type AS ClientType
+  ,O.Account_Client_Type__c AS AgyMrk
+  ,CAST(O.Opportunity_Value__c AS FLOAT64) AS Amt_Gross --Opportunity_Value__c -- GoogleGrossValue
+  ,CAST(O.Opportunity_Value_Net__c AS FLOAT64) AS Amt_Net --Opportunity_Value_Net__c -- AdswerveGrossValue
+  ,CAST(O.CloseDate AS DATE) AS CloseDate
+  ,CAST(O.CreatedDate__c AS DATE) AS CreatedDate__c
+  -- ,CAST(O.LastModifiedDate AS DATE) AS LastModifiedDate
+  ,CAST(O.Contract_Start_Date__c AS DATE) AS Contract_Start_Date__c
+  ,CAST(O.Contract_End_Date__c AS DATE) AS Contract_End_Date__c
+  -- ,Opportunity_Description__c
+  ,CASE 
+    WHEN O.Google_Funded__c IS NULL THEN "F"
+    WHEN O.Google_Funded__c = "No" THEN "F"
+    WHEN O.Google_Funded__c IN ("Fully","Partially") THEN "T"
+    ELSE "Error"
+  END AS google_funded
+  ,CASE
+    WHEN O.RecordTypeId <> "0124M000000XA5MQAW"
+      OR (  O.RecordTypeId = "0124M000000XA5MQAW"
+            AND NOT REGEXP_CONTAINS(O.Product_Combine__c,"Platform|Connect App")
+          ) THEN "N"
+    ELSE "Y"
+   END AS Renewal 
+  ,O.Renewal_Probability__c
+  ,M.PipelineMapping AS PlatformOrService
+  
+FROM `adswerve-sfdc.Warehouse.opportunity` O
+LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+LEFT JOIN `adswerve-finance.Warehouse.Customer` C ON O.celigo_sfnsio__NetSuite_Id__c = C.Internal_ID
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProductFamilyClassMap` F ON O.Product_Family__c = F.Product_Family
+WHERE
+  O.StageName = "Open"
+  -- AND N.OpportunityId IS NULL
+  -- AND O.CloseDate >= "2024-01-01"
+  -- AND M.ServiceMapping IN ("Services")
+)
+--Step 1 [END] : Get Pipeline Data  ------------------------------------------------
+
+
+--Step 2 [Start] : Layer In Assumptions, EXCLUDE (Platform Renewals)  ------------------------------------------------
+
+,Layered_1 AS (
+SELECT
+  S.Name
+  ,S.SF_OpportunityID
+  ,S.AccountID
+  ,S.celigo_sfnsio__NetSuite_Id__c
+  ,S.Pipeline_Stage
+  ,S.Product_Combine__c
+  ,S.Product_Family__c
+  ,S.Service__c
+  ,IFNULL(O.Project_Type,S.Project_Type) AS Project_Type
+  ,S.StageName
+  ,S.ClientType
+  ,S.AgyMrk
+  ,IFNULL(O.Opportunity_Value__c,S.Amt_Gross) AS Amt_Gross
+  ,IFNULL(O.Opportunity_Value_Net__c,S.Amt_Net) AS Amt_Net
+  ,S.CloseDate
+  ,S.CreatedDate__c
+  ,S.Contract_Start_Date__c
+  ,S.Contract_End_Date__c
+  ,CD.Assumption AS CloseDT_Plus
+  ,IFNULL(O.Infer_StartDt,
+    IFNULL(S.Contract_Start_Date__c,
+    CASE
+      WHEN S.PlatformOrService = "Platform" AND REGEXP_CONTAINS(S.Product_Family__c,"Google Analytics 4") 
+        THEN DATE_ADD(LAST_DAY(S.CloseDate, MONTH),INTERVAL 1 DAY)
+      WHEN S.PlatformOrService = "Services" THEN DATE_ADD(S.CloseDate,INTERVAL 15 DAY)
+      ELSE DATE_ADD(S.CloseDate,INTERVAL CAST(CD.Assumption/*CloseDT_Plus*/AS INT64) DAY)
+      END )) AS Inf_StartDT
+  -- -------------------------------------------------------
+  ,IFNULL(O.Infer_EndDt,
+  CASE
+    WHEN REGEXP_CONTAINS(S.Service__c,"Platform") 
+      AND REGEXP_CONTAINS(S.Product_Family__c,"Campaign Manager|Display & Video 360|Search Ads 360") THEN 
+        IFNULL(S.Contract_End_Date__c,DATE_ADD(IFNULL(S.Contract_Start_Date__c,DATE_ADD(S.CloseDate,INTERVAL CAST(CD.Assumption/*CloseDT_Plus*/AS INT64) DAY)), INTERVAL 3 YEAR))  --Evergreen for Media Platforms
+    ELSE IFNULL(S.Contract_End_Date__c,DATE_ADD(IFNULL(S.Contract_Start_Date__c,DATE_ADD(S.CloseDate,INTERVAL CAST(CD.Assumption/*CloseDT_Plus*/AS INT64) DAY)), INTERVAL 1 YEAR)) 
+  END) AS Inf_EndDT
+  ,S.google_funded
+  ,S.Renewal
+  ,S.Renewal_Probability__c
+  ,S.PlatformOrService
+  -------------------------------------------------------
+  ,CAST(P1.Assumption AS FLOAT64) AS Prospect_Current
+  ,CAST(P2.Assumption AS FLOAT64) AS Prospect_After
+  ,CAST(P3.Assumption AS DATE) AS Prospect_AfterDt
+  -------------------------------------------------------
+  ,CAST(Q1.Assumption AS FLOAT64) AS Qualified_Current
+  ,CAST(Q2.Assumption AS FLOAT64) AS Qualified_After
+  ,CAST(Q3.Assumption AS DATE) AS Qualified_AfterDt
+  -------------------------------------------------------
+  ,CAST(PR1.Assumption AS FLOAT64) AS Proposed_Current
+  ,CAST(PR2.Assumption AS FLOAT64) AS Proposed_After
+  ,CAST(PR3.Assumption AS DATE) AS Proposed_AfterDt
+  -------------------------------------------------------
+  ,CAST(Cons1.Assumption AS FLOAT64) AS Consideration_Current
+  ,CAST(Cons2.Assumption AS FLOAT64) AS Consideration_After
+  ,CAST(Cons3.Assumption AS DATE) AS Consideration_AfterDt
+  -------------------------------------------------------
+  ,CAST(Cont1.Assumption AS FLOAT64) AS Contract_Current
+  ,CAST(Cont2.Assumption AS FLOAT64) AS Contract_After
+  ,CAST(Cont3.Assumption AS DATE) AS Contract_AfterDt
+    -------------------------------------------------------
+  ,CAST(T1.Assumption AS FLOAT64) AS Service_Dollar_Tier_1 
+  ,CAST(T2.Assumption AS FLOAT64) AS Service_Dollar_Tier_2 
+  -- ,CAST(T3.Assumption AS FLOAT64) AS Service_Dollar_Tier_3 
+  -------------------------------------------------------
+  ,CASE
+    
+    WHEN S.Project_Type = "Rate Card" THEN 0
+    
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) <= CAST(T1.Assumption AS FLOAT64) THEN 3
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) <= CAST(T2.Assumption AS FLOAT64) THEN 6
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) > CAST(T2.Assumption AS FLOAT64) THEN 12
+
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Platform") AND S.Renewal = "N" THEN 24
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Platform") AND S.Renewal = "Y" THEN 0
+ 
+
+    ELSE DATE_DIFF(IFNULL(S.Contract_End_Date__c,DATE_ADD(IFNULL(S.Contract_Start_Date__c,DATE_ADD(S.CloseDate,INTERVAL CAST(CD.Assumption/*CloseDT_Plus*/AS INT64) DAY)),INTERVAL 1 YEAR)),IFNULL(S.Contract_Start_Date__c,DATE_ADD(S.CloseDate,INTERVAL CAST(CD.Assumption/*CloseDT_Plus*/AS INT64) DAY)),MONTH) 
+    END AS Contract_Term
+
+  ,CASE
+    WHEN S.Project_Type = "Rate Card" THEN "No Revenue"
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) <= CAST(T1.Assumption AS FLOAT64) THEN "3 months"
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) <= CAST(T2.Assumption AS FLOAT64) THEN "6 months"
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Services") 
+      AND IFNULL(O.Opportunity_Value__c,S.Amt_Gross) > CAST(T2.Assumption AS FLOAT64) THEN "12 months"
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Platform") AND S.Renewal = "N" THEN "Evergreen"
+    WHEN REGEXP_CONTAINS(S.PlatformOrService,"Platform") AND S.Renewal = "Y" THEN "No Revenue"
+    ELSE "Infer Dates" 
+  END AS Term_Type
+  ,IFNULL((1- CAST(SD.Assumption AS FLOAT64)),1) AS Sales_Discount
+  ,CAST(SR.Assumption AS FLOAT64) AS Renewal_Probability_Pct  
+
+FROM SF_OppData S
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` P1 ON P1.Name = "Prospect Current"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` P2 ON P2.Name = "Prospect After"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` P3 ON P3.Name = "Prospect After Date"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Q1 ON Q1.Name = "Qualified Current"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Q2 ON Q2.Name = "Qualified After"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Q3 ON Q3.Name = "Qualified After Date"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` PR1 ON PR1.Name = "Proposed Current"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` PR2 ON PR2.Name = "Proposed After"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` PR3 ON PR3.Name = "Proposed After Date"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cons1 ON Cons1.Name = "Consideration Current"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cons2 ON Cons2.Name = "Consideration After"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cons3 ON Cons3.Name = "Consideration After Date"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cont1 ON Cont1.Name = "Contract Current"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cont2 ON Cont2.Name = "Contract After"
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` Cont3 ON Cont3.Name = "Contract After Date"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` CD ON CD.Name = "CloseDT_Plus"
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizOverrides` O ON S.SF_OpportunityID = O.SF_OppID
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` T1 ON S.PlatformOrService = "Services" AND T1.Name = "Service_Dollar_Tier_1" 
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` T2 ON S.PlatformOrService = "Services" AND T2.Name = "Service_Dollar_Tier_2" 
+-- LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` T3 ON S.PlatformOrService = "Services" AND T3.Name = "Service_Dollar_Tier_3" 
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` SR ON S.Renewal_Probability__c = SR.Name 
+  AND SR.Assumption_Type = "Service_Renewal_Chance"
+--------------------------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------------------------
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizAssumptions` SD ON
+  CASE
+    WHEN S.PlatformOrService = "Services" 
+      AND SD.Assumption_Type = "SalesTeamDiscount" 
+      AND SD.Name = "Services" THEN TRUE
+    
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Campaign Manager" AND REGEXP_CONTAINS(Product_Family__c,"Campaign Manager") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Display & Video 360" AND REGEXP_CONTAINS(Product_Family__c,"Display & Video 360") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Search Ads 360" AND REGEXP_CONTAINS(Product_Family__c,"Search Ads 360") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Google Analytics 360" AND REGEXP_CONTAINS(Product_Family__c,"Google Analytics 360") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Google Analytics 4" AND REGEXP_CONTAINS(Product_Family__c,"Google Analytics 4") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Google Cloud Platform" AND REGEXP_CONTAINS(Product_Family__c,"Google Cloud Platform") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "G Suite" AND REGEXP_CONTAINS(Product_Family__c,"G Suite") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Adobe" AND REGEXP_CONTAINS(Product_Family__c,"Adobe") THEN TRUE
+
+    WHEN S.PlatformOrService = "Platform" 
+      AND SD.Name = "Other" AND NOT REGEXP_CONTAINS(Product_Family__c,"Campaign Manager|Display & Video 360|Search Ads 360|Google Analytics 360|Google Analytics 4|Google Cloud Platform|G Suite|Adobe") THEN TRUE
+        
+    ELSE FALSE
+  END
+--------------------------------------------------------------------------------------------------
+WHERE 
+  NOT (
+        S.PlatformOrService = "Platform"
+        AND S.Renewal = "Y"
+      )
+----------------------------
+)
+
+-- SELECT * FROM Layered_1
+-- WHERE
+--   Pipeline_Stage = "Prospect"
+-- ORDER BY 1,2,3,4
+
+,Layered_2 AS (
+SELECT
+  L.* EXCEPT (Renewal_Probability__c,Prospect_Current,Prospect_After,Prospect_AfterDt,Qualified_Current,Qualified_After,Qualified_AfterDt,Proposed_Current,Proposed_After,Proposed_AfterDt,Consideration_Current,Consideration_After,Consideration_AfterDt,Contract_Current,Contract_After,Contract_AfterDt, Inf_EndDT )
+  
+  ,DATE_ADD(L.Inf_StartDT,INTERVAL L.Contract_Term MONTH) AS Inf_EndDT
+
+  ,CASE
+    WHEN L.Renewal_Probability_Pct IS NOT NULL THEN L.Renewal_Probability_Pct
+
+    WHEN L.Pipeline_Stage = "Prospect" AND L.CloseDate < L.Prospect_AfterDt THEN (1-L.Prospect_Current)
+    WHEN L.Pipeline_Stage = "Prospect" AND L.CloseDate >= L.Prospect_AfterDt THEN (1-L.Prospect_After)
+    
+    WHEN L.Pipeline_Stage = "Qualified" AND L.CloseDate < L.Qualified_AfterDt THEN (1-L.Qualified_Current)
+    WHEN L.Pipeline_Stage = "Qualified" AND L.CloseDate >= L.Qualified_AfterDt THEN (1-L.Qualified_After) -- fixed 6/30/2025
+
+    WHEN L.Pipeline_Stage = "Proposed" AND L.CloseDate < L.Proposed_AfterDt THEN (1-L.Proposed_Current)
+    WHEN L.Pipeline_Stage = "Proposed" AND L.CloseDate >= L.Proposed_AfterDt THEN (1-L.Proposed_After)
+
+    WHEN L.Pipeline_Stage = "Consideration" AND L.CloseDate < L.Consideration_AfterDt THEN (1-L.Consideration_Current)
+    WHEN L.Pipeline_Stage = "Consideration" AND L.CloseDate >= L.Consideration_AfterDt THEN (1-L.Consideration_After)
+
+    WHEN L.Pipeline_Stage = "Contract" AND L.CloseDate < L.Contract_AfterDt THEN (1-L.Contract_Current)
+    WHEN L.Pipeline_Stage = "Contract" AND L.CloseDate >= L.Contract_AfterDt THEN (1-L.Contract_After)
+    
+    ELSE NULL
+  END AS ProbabilityDiscount
+FROM Layered_1 L
+)
+
+
+,Layered_3 AS ( 
+SELECT
+  L.* EXCEPT(Renewal_Probability_Pct)
+  ,ROUND((L.Amt_Net*L.Sales_Discount*L.ProbabilityDiscount),0) AS DiscountedNet
+  ,ROUND((L.Amt_Gross*L.Sales_Discount*L.ProbabilityDiscount),0) AS DiscountedGross
+FROM Layered_2 L
+)
+
+,Layered_4 AS ( 
+SELECT
+  L.* 
+  ,ROUND(SAFE_DIVIDE(L.DiscountedNet, IF(L.Contract_Term >12,12,L.Contract_Term)),2) AS RevPerMonth_Net
+  ,ROUND(SAFE_DIVIDE(L.DiscountedGross, IF(L.Contract_Term >12,12,L.Contract_Term)),2) AS RevPerMonth_Gross
+FROM Layered_3 L
+)
+
+-- SELECT * FROM Layered_4
+
+--Step 2 [End] : Layer In Assumptions  ------------------------------------------------
+
+--Step 3 [Start] : Layer In 24 Months AND Trend Out Revenue with Cutoffs Etc.----------
+
+,Periods AS (
+SELECT X AS Timeline
+FROM UNNEST
+(GENERATE_DATE_ARRAY(
+  (
+    SELECT 
+      CAST(Assumption AS DATE) 
+    FROM `adswerve-finance.Fin_Stage.NewBizAssumptions` 
+    WHERE 
+      Assumption_Type = "Report_Period"
+  ) 
+  ,DATE_ADD(
+              (
+                SELECT 
+                  CAST(Assumption AS DATE) 
+                FROM `adswerve-finance.Fin_Stage.NewBizAssumptions` 
+                WHERE 
+                  Assumption_Type = "Report_Period"
+              )
+              ,INTERVAL 23 MONTH
+            )
+    ,INTERVAL 1 MONTH
+  )   
+) AS X
+)
+
+,Trended AS (
+SELECT
+  L.* EXCEPT (RevPerMonth_Net,RevPerMonth_Gross)
+  ,L.RevPerMonth_Net AS RevPerMonthNet_base
+  ,L.RevPerMonth_Gross AS RevPerMonthGross_base
+-------------------------------
+  ,P.Timeline Timeline_F
+  ,FORMAT_DATE("%h_%Y",P.Timeline) AS Timeline
+  ,CASE
+    WHEN P.Timeline >= L.Inf_StartDT AND P.Timeline <= L.Inf_EndDT THEN L.RevPerMonth_Net
+    ELSE 0
+  END AS RevPerMonth_Net
+  ,CASE
+    WHEN P.Timeline >= L.Inf_StartDT AND P.Timeline <= L.Inf_EndDT THEN L.RevPerMonth_Gross
+    ELSE 0
+  END AS RevPerMonth_Gross
+----------------------------------------
+FROM Layered_4 L
+CROSS JOIN Periods P
+ORDER BY 1,2,3
+)
+
+
+,Discounted AS (
+SELECT
+  T.* EXCEPT (Timeline_F)
+  -- ,T.RevPerMonth_Net AS RevPerMonthNet_base
+  -- ,T.RevPerMonth_Gross AS RevPerMonthGross_base
+  
+  ---------------------------------------------------------------------------------------------------------------------------------------------------
+  ---------------------------------------------------------------------------------------------------------------------------------------------------
+  ,SUM(T.RevPerMonth_Net) OVER (PARTITION BY SF_OpportunityID ORDER BY 1,2,PARSE_DATE('%b_%Y', Timeline)) AS CumRev_Net
+  ,ROUND(CASE 
+    WHEN T.RevPerMonth_Net = 0 THEN 0
+    ELSE -(SUM(T.RevPerMonth_Net) OVER (PARTITION BY SF_OpportunityID ORDER BY 1,2,PARSE_DATE('%b_%Y', Timeline)) - T.DiscountedNet) 
+  END,2) AS Remaining_Net
+
+  ---------------------------------------------------------------------------------------------------------------------------------------------------
+  ,SUM(T.RevPerMonth_Gross) OVER (PARTITION BY SF_OpportunityID ORDER BY 1,2,PARSE_DATE('%b_%Y', Timeline)) AS CumRev_Gross
+  ,ROUND(CASE 
+    WHEN T.RevPerMonth_Gross = 0 THEN 0
+    ELSE -(SUM(T.RevPerMonth_Gross) OVER (PARTITION BY SF_OpportunityID ORDER BY 1,2,PARSE_DATE('%b_%Y', Timeline)) - T.DiscountedGross) 
+  END,2) AS Remaining_Gross
+  ---------------------------------------------------------------------------------------------------------------------------------------------------
+  ---------------------------------------------------------------------------------------------------------------------------------------------------
+FROM Trended T
+GROUP BY ALL
+ORDER BY
+  1,2,PARSE_DATE('%b_%Y', Timeline)
+)
+
+
+
+-- ,RevPerMonth AS(
+SELECT 
+  D.* EXCEPT (RevPerMonthNet_base, RevPerMonthGross_base,CumRev_Net ,CumRev_Gross ,Remaining_Net ,Remaining_Gross,RevPerMonth_Net,RevPerMonth_Gross)
+  ----------------------------------------------------------------------
+  ,D.RevPerMonthNet_base
+  ,D.CumRev_Net
+  ,D.Remaining_Net
+  -- ,ROW_NUMBER() OVER (PARTITION BY SF_OpportunityID ORDER BY PARSE_DATE('%b_%Y', Timeline)  ) AS RwNum
+
+  ,CASE 
+    -- WHEN Inf_StartDT > PARSE_DATE('%b_%Y', Timeline) THEN 0
+    -- WHEN PARSE_DATE('%b_%Y', Timeline) >= Inf_EndDT  THEN 0
+    WHEN PARSE_DATE('%b_%Y', Timeline) < DATE_TRUNC(Inf_StartDT,MONTH) THEN 0
+    WHEN PARSE_DATE('%b_%Y', Timeline) >= DATE_TRUNC(Inf_EndDT,MONTH) THEN 0
+    ELSE RevPerMonthNet_base
+  END AS RevPerMonth_Net
+  ----------------------------------------------------------------------
+  ,D.RevPerMonthGross_base
+  ,D.CumRev_Gross
+  ,D.Remaining_Gross
+  ,CASE 
+    -- WHEN Inf_StartDT > PARSE_DATE('%b_%Y', Timeline) THEN 0
+    -- WHEN PARSE_DATE('%b_%Y', Timeline) >= Inf_EndDT  THEN 0
+    WHEN PARSE_DATE('%b_%Y', Timeline) < DATE_TRUNC(Inf_StartDT,MONTH) THEN 0
+    WHEN PARSE_DATE('%b_%Y', Timeline) >= DATE_TRUNC(Inf_EndDT,MONTH) THEN 0
+    ELSE RevPerMonthGross_base
+  END AS RevPerMonth_Gross
+  ----------------------------------------------------------------------
+
+FROM Discounted D
+-- )
+;
+
+
+----------------------------------------------------------------------------------------
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.NewBizProjectsP1_Net` AS
+SELECT 
+  D.* EXCEPT (RevPerMonthNet_base,RevPerMonthGross_base,RevPerMonth_Gross,CumRev_Gross,CumRev_Net,Remaining_Net,Remaining_Gross) 
+  ,IFNULL(CAST(M.GL AS STRING),'Error') AS GL
+  ,IFNULL(A.display_name,'Error')  AS GL_Nm
+  ,IFNULL(O.Class,IFNULL(M.Class,'Error')) AS Class
+  ,IFNULL(IF(A.internal_income_statment = "Services","Analytics Services",A.internal_income_statment),'Error') AS Internal_Cat
+FROM NewBizTemp D
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProdFamilynService_GLnClass_Map` M ON 
+  D.Product_Family__c = M.Product_Family__c
+  AND D.Service__c = M.Service__c
+LEFT JOIN `adswerve-finance.Warehouse.Account` A ON CAST(M.GL AS STRING) = A.Number
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizOverrides` O ON D.SF_OpportunityID = O.SF_OppID
+;
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.NewBizProjectsP1_Gross` AS
+SELECT 
+  D.* EXCEPT (RevPerMonthNet_base,RevPerMonthGross_base,RevPerMonth_Net,CumRev_Gross,CumRev_Net,Remaining_Net,Remaining_Gross) 
+  ,IFNULL(CAST(M.GL AS STRING),'Error') AS GL
+  ,IFNULL(A.display_name,'Error')  AS GL_Nm
+  ,IFNULL(O.Class,IFNULL(M.Class,'Error')) AS Class
+  ,IFNULL(IF(A.internal_income_statment = "Services","Analytics Services",A.internal_income_statment),'Error') AS Internal_Cat
+FROM NewBizTemp D
+LEFT JOIN `adswerve-finance.Fin_DataSources.ProdFamilynService_GLnClass_Map` M ON 
+  D.Product_Family__c = M.Product_Family__c
+  AND D.Service__c = M.Service__c
+LEFT JOIN `adswerve-finance.Warehouse.Account` A ON CAST(M.GL AS STRING) = A.Number
+LEFT JOIN `adswerve-finance.Fin_Stage.NewBizOverrides` O ON D.SF_OpportunityID = O.SF_OppID
+;
+----------------------------------------------------------------------------------------
+
+
+
+
+END;

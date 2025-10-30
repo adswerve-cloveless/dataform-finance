@@ -1,0 +1,93 @@
+CREATE OR REPLACE PROCEDURE `adswerve-finance.Fin_Routines.NewBizProjectsP2`()
+BEGIN
+
+DECLARE Rpt_Period DATE;
+DECLARE TimePeriod1, SQL1 STRING;
+DECLARE TimePeriod2, SQL2 STRING;
+
+-- DECLARE TimePeriod2 ARRAY<DATE>;
+
+SET Rpt_Period = (
+  SELECT 
+    CAST(Assumption AS DATE) AS Assumption
+  FROM `adswerve-finance.Fin_Stage.NewBizAssumptions` 
+  WHERE 
+    Assumption_Type = "Report_Period"
+);
+
+SET TimePeriod1 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(Rpt_Period AS DATE) 
+                                        ,DATE_ADD(CAST(Rpt_Period AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET TimePeriod2 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("SUM(%b_%Y) AS %b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        CAST(Rpt_Period AS DATE) 
+                                        ,DATE_ADD(CAST(Rpt_Period AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+-- SELECT TimePeriod1
+SET SQL1 = '''
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.NewBizProjectsP2` AS (
+SELECT
+  "Net" AS SummaryType
+  ,* 
+FROM `adswerve-finance.Fin_DataSources.NewBizProjectsP1_Net` 
+PIVOT(SUM(IFNULL(RevPerMonth_Net,0)) FOR Timeline IN (''' || TimePeriod1 || '''))
+
+UNION ALL
+
+SELECT
+  "Gross" AS SummaryType
+  ,* 
+FROM `adswerve-finance.Fin_DataSources.NewBizProjectsP1_Gross` 
+PIVOT(SUM(IFNULL(RevPerMonth_Gross,0)) FOR Timeline IN (''' || TimePeriod1 || '''))
+
+);
+''';
+
+
+SET SQL2 = '''
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_DataSources.NewBizProjectsP3` AS (
+SELECT
+  SummaryType
+  ,GL_Nm
+  ,AgyMrk
+  ,ClientType
+  ,google_funded
+  ,Class,
+  ''' || TimePeriod2 || '''
+
+FROM `adswerve-finance.Fin_DataSources.NewBizProjectsP2` 
+GROUP BY ALL
+ORDER BY 
+  SummaryType
+  ,GL_Nm
+  ,AgyMrk
+  ,google_funded
+  ,Class
+);
+''';
+
+
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+
+-- SELECT * FROM `adswerve-finance.Fin_DataSources.NewBizProjectsP2`
+
+END;
