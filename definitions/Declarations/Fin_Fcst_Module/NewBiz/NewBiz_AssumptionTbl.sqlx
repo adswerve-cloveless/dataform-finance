@@ -1,0 +1,15 @@
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance.Fin_Stage.NewBizAssumptions` --Update as needed
+(
+   
+  Assumption_Type	STRING 
+  ,Name	STRING 
+  ,Assumption STRING
+  ,Active STRING
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/17LUUER8I8hkA4BBi1FR5D-fb4ucuKm0Fzf26p1mk7ng/edit?gid=0#gid=0'] --Update as needed
+  ,sheet_range = 'Assumptions'  --Update as needed
+  ,skip_leading_rows = 1
+  --,header = 0
+);
