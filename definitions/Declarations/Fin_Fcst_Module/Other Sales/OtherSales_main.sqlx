@@ -157,7 +157,7 @@ WHERE
         REGEXP_CONTAINS(IS_Category,"Other Sales")
         OR (
               REGEXP_CONTAINS(Account,"51150|51165|51199|51510|51515|51520")
-              OR OR REGEXP_CONTAINS(Account,"42500|51125") -- Chrome 12.23.2025
+              OR REGEXP_CONTAINS(Account,"42500|51125") -- Chrome 12.23.2025
         )
       )
   AND Parent_Nm <> ""
