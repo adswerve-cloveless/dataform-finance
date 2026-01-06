@@ -1,0 +1,84 @@
+config {
+  type: "table",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "Stage_Adobe"
+}
+
+
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Adobe` 
+(
+    Customer_Nm STRING
+    ,Harvest_Nm STRING
+    ,Harvest_ID STRING
+    ,Project_ID STRING
+    ,Analytics_Director STRING
+    ,Analytics_Manager STRING
+    ,Consultants STRING
+    ,Acct_Owner STRING
+    ,Inactive STRING
+    ,Product__c STRING
+    ,G_Funded STRING
+    ,MRK_Vs_AGY STRING    
+    ,Fcst_Class STRING
+    ,Project_Type STRING
+    ,Infer_StartDt STRING
+    ,Infer_EndDt STRING
+    ,Contract_Rate STRING
+    ,Contract_Val  STRING
+    ,RevToDate STRING
+    ,Total_Overages  STRING
+    ,Def_Balance  STRING
+    ,Fcst_Var  STRING 
+    
+    ,PY_Jan  STRING 
+    ,PY_Feb  STRING 
+    ,PY_Mar  STRING 
+    ,PY_Apr  STRING 
+    ,PY_May  STRING 
+    ,PY_Jun  STRING 
+    ,PY_Jul  STRING 
+    ,PY_Aug  STRING 
+    ,PY_Sep  STRING 
+    ,PY_Oct  STRING 
+    ,PY_Nov  STRING 
+    ,PY_Dec  STRING 
+
+    ,CY_Jan  STRING 
+    ,CY_Feb  STRING 
+    ,CY_Mar  STRING 
+    ,CY_Apr  STRING 
+    ,CY_May  STRING 
+    ,CY_Jun  STRING 
+    ,CY_Jul  STRING 
+    ,CY_Aug  STRING 
+    ,CY_Sep  STRING 
+    ,CY_Oct  STRING 
+    ,CY_Nov  STRING 
+    ,CY_Dec  STRING 
+    
+    ,NY_Jan  STRING 
+    ,NY_Feb  STRING 
+    ,NY_Mar  STRING 
+    ,NY_Apr  STRING 
+    ,NY_May  STRING 
+    ,NY_Jun  STRING 
+    ,NY_Jul  STRING 
+    ,NY_Aug  STRING 
+    ,NY_Sep  STRING 
+    ,NY_Oct  STRING 
+    ,NY_Nov  STRING 
+    ,NY_Dec  STRING 
+
+
+	
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/1lD5Hs5gYPnM4UHA5AyTyXucxlfoNGkbOSScUEki8YK0'] --Update as needed
+  ,sheet_range = 'Operations Fcst'  --Sheet Name
+  ,skip_leading_rows = 11
+  --,header = 0
+)
+

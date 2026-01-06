@@ -1,0 +1,115 @@
+config {
+  type: "operations",
+  database: "adswerve-finance-reporting",
+  schema: "Fin_Fcst_Module",
+  name: "ExistingProjs_Adobe"
+}
+
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_Adobe`()
+BEGIN
+
+
+
+DECLARE SQL1 STRING;
+DECLARE Table_Nm STRING;
+
+
+SET Table_Nm = CONCAT(
+                      "adswerve-finance-reporting.Fin_Fcst_Module.ExistingProjs_Adobe_"--20240217");
+                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
+
+
+
+
+SET SQL1 = CONCAT(
+              "CREATE OR REPLACE TABLE ",
+              Table_Nm,
+              ''' AS SELECT 
+              Customer_Nm
+              ,Harvest_Nm
+              ,Harvest_ID
+              ,Project_ID
+              ,Analytics_Director
+              ,Analytics_Manager
+              ,Consultants
+              ,Acct_Owner
+              ,Inactive
+              ,Product__c
+              ,G_Funded
+              ,Fcst_Class 
+              ,MRK_Vs_AGY
+              ,Project_Type             
+
+              ,PARSE_DATE('%m/%d/%Y', Infer_StartDt) AS Infer_StartDt
+              ,PARSE_DATE('%m/%d/%Y', Infer_EndDt) AS Infer_EndDt
+              
+              ,CAST(REPLACE(IF(LEFT(Contract_Rate, 1) = '(', '-' || SUBSTR(Contract_Rate, 2, LENGTH(Contract_Rate) - 2), IF(Contract_Rate = '-', '0', Contract_Rate)), ',', '') AS FLOAT64) AS Contract_Rate
+              ,CAST(REPLACE(IF(LEFT(Contract_Val, 1) = '(', '-' || SUBSTR(Contract_Val, 2, LENGTH(Contract_Val) - 2), IF(Contract_Val = '-', '0', Contract_Val)), ',', '') AS FLOAT64) AS Contract_Val
+              ,CAST(REPLACE(IF(LEFT(RevToDate, 1) = '(', '-' || SUBSTR(RevToDate, 2, LENGTH(RevToDate) - 2), IF(RevToDate = '-', '0', RevToDate)), ',', '') AS FLOAT64) AS RevToDate
+              ,CAST(REPLACE(IF(LEFT(Total_Overages, 1) = '(', '-' || SUBSTR(Total_Overages, 2, LENGTH(Total_Overages) - 2), IF(Total_Overages = '-', '0', Total_Overages)), ',', '') AS FLOAT64) AS Total_Overages
+              ,CAST(REPLACE(IF(LEFT(Def_Balance, 1) = '(', '-' || SUBSTR(Def_Balance, 2, LENGTH(Def_Balance) - 2), IF(Def_Balance = '-', '0', Def_Balance)), ',', '') AS FLOAT64) AS Def_Balance
+              ,CAST(REPLACE(IF(LEFT(Fcst_Var, 1) = '(', '-' || SUBSTR(Fcst_Var, 2, LENGTH(Fcst_Var) - 2), IF(Fcst_Var = '-', '0', Fcst_Var)), ',', '') AS FLOAT64) AS Fcst_Var
+
+             
+              ,CAST(REPLACE(IF(LEFT(CY_Jan, 1) = '(', '-' || SUBSTR(CY_Jan, 2, LENGTH(CY_Jan) - 2), IF(CY_Jan = '-', '0', CY_Jan)), ',', '') AS FLOAT64) AS CY_Jan
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Feb, 1) = '(', '-' || SUBSTR(CY_Feb, 2, LENGTH(CY_Feb) - 2), IF(CY_Feb = '-', '0', CY_Feb)), ',', '') AS FLOAT64) AS CY_Feb
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Mar, 1) = '(', '-' || SUBSTR(CY_Mar, 2, LENGTH(CY_Mar) - 2), IF(CY_Mar = '-', '0', CY_Mar)), ',', '') AS FLOAT64) AS CY_Mar
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Apr, 1) = '(', '-' || SUBSTR(CY_Apr, 2, LENGTH(CY_Apr) - 2), IF(CY_Apr = '-', '0', CY_Apr)), ',', '') AS FLOAT64) AS CY_Apr
+              
+              ,CAST(REPLACE(IF(LEFT(CY_May, 1) = '(', '-' || SUBSTR(CY_May, 2, LENGTH(CY_May) - 2), IF(CY_May = '-', '0', CY_May)), ',', '') AS FLOAT64) AS CY_May
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Jun, 1) = '(', '-' || SUBSTR(CY_Jun, 2, LENGTH(CY_Jun) - 2), IF(CY_Jun = '-', '0', CY_Jun)), ',', '') AS FLOAT64) AS CY_Jun
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Jul, 1) = '(', '-' || SUBSTR(CY_Jul, 2, LENGTH(CY_Jul) - 2), IF(CY_Jul = '-', '0', CY_Jul)), ',', '') AS FLOAT64) AS CY_Jul
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Aug, 1) = '(', '-' || SUBSTR(CY_Aug, 2, LENGTH(CY_Aug) - 2), IF(CY_Aug = '-', '0', CY_Aug)), ',', '') AS FLOAT64) AS CY_Aug
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Sep, 1) = '(', '-' || SUBSTR(CY_Sep, 2, LENGTH(CY_Sep) - 2), IF(CY_Sep = '-', '0', CY_Sep)), ',', '') AS FLOAT64) AS CY_Sep
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Oct, 1) = '(', '-' || SUBSTR(CY_Oct, 2, LENGTH(CY_Oct) - 2), IF(CY_Oct = '-', '0', CY_Oct)), ',', '') AS FLOAT64) AS CY_Oct
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Nov, 1) = '(', '-' || SUBSTR(CY_Nov, 2, LENGTH(CY_Nov) - 2), IF(CY_Nov = '-', '0', CY_Nov)), ',', '') AS FLOAT64) AS CY_Nov
+              
+              ,CAST(REPLACE(IF(LEFT(CY_Dec, 1) = '(', '-' || SUBSTR(CY_Dec, 2, LENGTH(CY_Dec) - 2), IF(CY_Dec = '-', '0', CY_Dec)), ',', '') AS FLOAT64) AS CY_Dec
+
+              ------------------------------------------------------------------------------------------------------------------------------------------------------------------- 
+              ,CAST(REPLACE(IF(LEFT(NY_Jan, 1) = '(', '-' || SUBSTR(NY_Jan, 2, LENGTH(NY_Jan) - 2), IF(NY_Jan = '-', '0', NY_Jan)), ',', '') AS FLOAT64) AS NY_Jan
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Feb, 1) = '(', '-' || SUBSTR(NY_Feb, 2, LENGTH(NY_Feb) - 2), IF(NY_Feb = '-', '0', NY_Feb)), ',', '') AS FLOAT64) AS NY_Feb
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Mar, 1) = '(', '-' || SUBSTR(NY_Mar, 2, LENGTH(NY_Mar) - 2), IF(NY_Mar = '-', '0', NY_Mar)), ',', '') AS FLOAT64) AS NY_Mar
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Apr, 1) = '(', '-' || SUBSTR(NY_Apr, 2, LENGTH(NY_Apr) - 2), IF(NY_Apr = '-', '0', NY_Apr)), ',', '') AS FLOAT64) AS NY_Apr
+              
+              ,CAST(REPLACE(IF(LEFT(NY_May, 1) = '(', '-' || SUBSTR(NY_May, 2, LENGTH(NY_May) - 2), IF(NY_May = '-', '0', NY_May)), ',', '') AS FLOAT64) AS NY_May
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Jun, 1) = '(', '-' || SUBSTR(NY_Jun, 2, LENGTH(NY_Jun) - 2), IF(NY_Jun = '-', '0', NY_Jun)), ',', '') AS FLOAT64) AS NY_Jun
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Jul, 1) = '(', '-' || SUBSTR(NY_Jul, 2, LENGTH(NY_Jul) - 2), IF(NY_Jul = '-', '0', NY_Jul)), ',', '') AS FLOAT64) AS NY_Jul
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Aug, 1) = '(', '-' || SUBSTR(NY_Aug, 2, LENGTH(NY_Aug) - 2), IF(NY_Aug = '-', '0', NY_Aug)), ',', '') AS FLOAT64) AS NY_Aug
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Sep, 1) = '(', '-' || SUBSTR(NY_Sep, 2, LENGTH(NY_Sep) - 2), IF(NY_Sep = '-', '0', NY_Sep)), ',', '') AS FLOAT64) AS NY_Sep
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Oct, 1) = '(', '-' || SUBSTR(NY_Oct, 2, LENGTH(NY_Oct) - 2), IF(NY_Oct = '-', '0', NY_Oct)), ',', '') AS FLOAT64) AS NY_Oct
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Nov, 1) = '(', '-' || SUBSTR(NY_Nov, 2, LENGTH(NY_Nov) - 2), IF(NY_Nov = '-', '0', NY_Nov)), ',', '') AS FLOAT64) AS NY_Nov
+              
+              ,CAST(REPLACE(IF(LEFT(NY_Dec, 1) = '(', '-' || SUBSTR(NY_Dec, 2, LENGTH(NY_Dec) - 2), IF(NY_Dec = '-', '0', NY_Dec)), ',', '') AS FLOAT64) AS NY_Dec
+
+                        
+              
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Adobe`;''');
+
+
+
+
+EXECUTE IMMEDIATE SQL1;
+
+
+
+END;
