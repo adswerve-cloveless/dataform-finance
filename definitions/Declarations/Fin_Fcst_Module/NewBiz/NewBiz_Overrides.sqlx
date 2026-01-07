@@ -1,0 +1,21 @@
+CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance.Fin_Stage.NewBizOverrides` --Update as needed
+(
+   
+  
+  SF_OppID	STRING
+  ,Opportunity_Value__c FLOAT64
+	,Opportunity_Value_Net__c FLOAT64
+  ,Infer_StartDt DATE
+  ,Infer_EndDt DATE
+  ,Class	STRING
+  ,Project_Type STRING
+
+
+)
+OPTIONS (
+  format = 'GOOGLE_SHEETS'
+  ,uris =  ['https://docs.google.com/spreadsheets/d/17LUUER8I8hkA4BBi1FR5D-fb4ucuKm0Fzf26p1mk7ng'] --Update as needed
+  ,sheet_range = 'Overrides'  --Update as needed
+  ,skip_leading_rows = 1
+  --,header = 0
+);
