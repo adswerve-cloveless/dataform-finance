@@ -8,7 +8,7 @@ config {
 
 CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Stage_Media` 
 (
-   Customer_Nm STRING
+    Customer_Nm STRING
     ,Harvest_Nm STRING
     ,Harvest_ID STRING
     ,Project_ID STRING
@@ -29,6 +29,9 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,RevToDate STRING
     ,Total_Overages  STRING
     ,Def_Balance  STRING
+    ,SF_StartDT STRING
+    ,SF_EndDT STRING
+
     ,Fcst_Var  STRING 
     
     ,PY_Jan  STRING 
@@ -69,7 +72,6 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,NY_Oct  STRING 
     ,NY_Nov  STRING 
     ,NY_Dec  STRING 
-
 
 
 	

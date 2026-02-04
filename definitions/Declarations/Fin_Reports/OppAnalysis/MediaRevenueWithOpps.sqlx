@@ -1,0 +1,442 @@
+--Notes: We are only including opportunities that have recognized revenue.
+
+DECLARE period_start, period_end DATE;
+DECLARE Period_List, Period_List2, Period_List3, Year_List, Year_List2, SQL1, SQL2, SQL3, SQL4, SQL5 STRING;
+
+
+SET period_start = "2020-01-01";
+SET period_end = `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`();
+
+
+SET Period_List =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("'%b_%Y'",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        period_start
+                                        ,period_end --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET Year_List =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        period_start
+                                        ,period_end --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 YEAR)  
+                  ) AS X
+    )
+);
+
+SET Year_List2 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        period_start
+                                        ,period_end --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 YEAR)  
+                  ) AS X
+    )
+);
+
+
+SET Period_List2 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("T.%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        period_start
+                                        ,period_end --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+SET Period_List3 =(
+SELECT STRING_AGG(Timeline)
+FROM( 
+      SELECT CAST( FORMAT_DATE("%b_%Y",X) AS STRING) AS Timeline
+      FROM UNNEST(
+                  GENERATE_DATE_ARRAY(
+                                        period_start
+                                        ,period_end --DATE_ADD(CAST(CY_START AS DATE), INTERVAL 23 MONTH)
+                                        ,INTERVAL 1 MONTH)  
+                  ) AS X
+    )
+);
+
+--Get Revnue Data
+CREATE OR REPLACE TEMP TABLE Revenue_Data AS (
+SELECT
+  -- period
+  FORMAT_DATE('%b_%Y', period) as period
+  ,parent_name
+  ,parent_id
+  ,revenue_item
+  ,salesforce_id
+  ,primary_opp_id
+  ,primary_opp_name
+  ,primary_opp_close_date
+  -- ,first_opp_name
+  -- ,first_opp_id
+  -- ,first_opp_close_date
+  ,second_opp_name
+  ,second_opp_id
+  ,second_opp_close_date
+  ,EXTRACT(YEAR FROM primary_opp_close_date) AS close_date_year
+  ,SUM(amount_gross) AS amount_gross
+  ,SUM(amount_net) AS amount_net
+FROM `adswerve-bi-data-marts.finance.finance_revenue_parent` R
+WHERE
+  REGEXP_CONTAINS(revenue_item,"DV360|CM360|SA360")
+  AND NOT REGEXP_CONTAINS(primary_opp_id,"(?i)error|(?i)taggable|(?i)missing")
+  AND period >= "2020-01-01"
+GROUP BY ALL
+);
+
+--Get Distinct List of opps from Revenue Data
+CREATE OR REPLACE TEMP TABLE RevData_Opps AS (
+SELECT
+  DISTINCT
+  primary_opp_id
+FROM Revenue_Data
+);
+
+
+--Get Opp Data
+CREATE OR REPLACE TEMP TABLE OppData AS (
+SELECT  
+  Opportunity_Safe_ID__c AS sf_opportunity_id
+  ,O.AccountID AS salesforce_id
+  ,A.name AS salesforce_name
+  ,A.celigo_sfnsio__NetSuite_Id__c AS netsuite_id
+  ,O.Name AS Opp_Name
+  ,O.Current_Pipeline_Stage__c
+  ,O.Product_Combine__c
+  ,O.Product_Family__c
+  ,O.Service__c
+  ,O.StageName
+  ,O.Type
+  ,O.Account_Client_Type__c
+  ,IF(O.RecordTypeId = "0124M000000XA5MQAW","T","F") AS Renewal
+
+  ,ROUND(
+    `adswerve-finance.Fin_Routines.fx_opp_value`( 
+        O.CloseDate
+        ,O.Product_Combine__c
+        ,O.Opportunity_Value__c
+        ,O.Opportunity_Value_Net__c
+      )
+    ,2) AS Opportunity_Value
+  
+  
+  ,CAST(O.CloseDate AS DATE) AS CloseDate
+
+  ,O.Google_Funded__c
+  ,CASE
+    WHEN O.Product_Family__c = "Display & Video 360" THEN "DV360 Revenue"
+    WHEN O.Product_Family__c = "Campaign Manager" THEN "CM360 Revenue"
+    WHEN O.Product_Family__c = "Search Ads 360" THEN "SA360 Revenue"
+    ELSe "Error"
+   END AS revenue_item
+
+FROM `adswerve-sfdc.Warehouse.opportunity` O
+-- LEFT JOIN `adswerve-finance.Fin_Stage.Manual_CommissionsServiceMap` M ON O.Service__c = M.Service
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON O.AccountID = A.Account_Case_Safe_ID__c
+WHERE
+  -- Opportunity_Safe_ID__c IN (SELECT primary_opp_id FROM RevData_Opps)
+  O.StageName = "Closed Won"
+  AND IF(O.RecordTypeId = "0124M000000XA5MQAW","T","F") = "F"
+  -- AND Product_Family__c IN (
+  --   "Display & Video 360"
+  --   ,"Campaign Manager"
+  --   ,"Search Ads 360")
+  -- AND REGEXP_CONTAINS(Service__c,"Platform" )
+  AND O.CloseDate >= "2020-01-01"
+);
+
+
+
+--Order and Sequence Opp Data
+CREATE OR REPLACE TEMP TABLE OppOrdering AS (
+SELECT 
+  salesforce_name
+  ,salesforce_id
+  ,sf_opportunity_id 
+  ,Opp_Name
+  ,Product_Combine__c
+  ,Product_Family__c
+  ,Service__c
+  ,revenue_item
+  ,CloseDate
+  ,Opportunity_Value
+  ,ROW_NUMBER() OVER (PARTITION BY salesforce_id, Product_Family__c
+      ORDER BY salesforce_id, closedate, Product_Family__c, IF(Service__c = "Platform (Self Service)",0,1), Service__c DESC  ) AS RwNum
+  
+FROM OppData
+-- WHERE
+--  salesforce_id = "001Rp00000ETpghIAD"
+-- QUALIFY RwNum =1
+ORDER BY 
+  salesforce_id
+  ,CloseDate
+  ,Product_Family__c
+  ,IF(Service__c = "Platform (Self Service)",0,1)
+  ,Service__c
+);
+
+
+
+--Aggregate Oppdata by revenue_item,close date, and salesforce_ID to get an aggresgated opp value to account for Manages Service ans Self Sercvice.
+
+
+CREATE OR REPLACE TEMP TABLE Linking_parent AS (
+SELECT
+  DISTINCT 
+  t1.netsuite_parent_name
+  ,t1.netsuite_parent_id
+  ,customer_item.sf_id
+  ,customer_item.ns_customer_id
+FROM `adswerve-bi-data-marts.customer.customer_mart` AS t1
+CROSS JOIN UNNEST(t1.customer) AS customer_item
+WHERE
+  -- This one condition checks for both NULL and empty strings
+  NULLIF(customer_item.sf_id, '') IS NOT NULL
+  AND customer_item.ns_customer_id IS NOT NULL
+  AND netsuite_parent_id = ns_customer_id --- KEY Clause
+ORDER BY
+  netsuite_parent_name
+);
+
+
+CREATE OR REPLACE TEMP TABLE Linking_customer AS (
+SELECT
+  DISTINCT 
+  t1.netsuite_parent_name
+  ,t1.netsuite_parent_id
+  ,customer_item.sf_id
+  ,customer_item.ns_customer_id
+FROM `adswerve-bi-data-marts.customer.customer_mart` AS t1
+CROSS JOIN UNNEST(t1.customer) AS customer_item
+WHERE
+  -- This one condition checks for both NULL and empty strings
+  NULLIF(customer_item.sf_id, '') IS NOT NULL
+  AND customer_item.ns_customer_id IS NOT NULL
+ORDER BY
+  netsuite_parent_name
+);
+
+
+
+CREATE OR REPLACE TEMP TABLE OppValues AS (
+
+SELECT 
+  EXTRACT(YEAR FROM CloseDate) AS close_year
+  ,CloseDate
+  ,salesforce_name
+  ,salesforce_id
+  ,L2.sf_id AS parent_salesforce_id
+  ,revenue_item
+  -- ,SUM(Opportunity_Value) AS opportunity_value
+  ,opportunity_value
+  ,ROW_NUMBER() OVER (PARTITION BY L2.sf_id, revenue_item, CloseDate
+      ORDER BY L2.sf_id, revenue_item, CloseDate) AS RwNum
+
+FROM OppOrdering O
+LEFT JOIN Linking_customer L1 ON O.salesforce_id = L1.sf_id
+LEFT JOIN Linking_parent L2 ON L1.netsuite_parent_id = L2.netsuite_parent_id
+-- GROUP BY ALL
+QUALIFY
+  RwNum = 1
+
+
+);
+
+
+CREATE OR REPLACE TEMP TABLE BaseData AS (
+SELECT 
+  R.period
+  ,R.parent_name	
+  ,R.parent_id	
+  ,R.revenue_item
+  -- ,R.salesforce_id
+  ,L.sf_id AS parent_salesforce_id
+  ,R.primary_opp_name	
+  ,R.primary_opp_id	
+  ,R.primary_opp_close_date
+  -- ,R.second_opp_close_date
+  -- ,SUM(amount_gross) AS amount_gross
+  ,SUM(R.amount_net) AS amount_net
+FROM Revenue_Data R
+LEFT JOIN Linking_parent L ON R.parent_id = L.netsuite_parent_id
+GROUP BY ALL
+);
+
+
+SET SQL1 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE Trended AS (
+SELECT 
+  *
+  ,ROW_NUMBER() OVER (PARTITION BY parent_salesforce_id, revenue_item, primary_opp_close_date
+      ORDER BY parent_salesforce_id, revenue_item, primary_opp_close_date) AS RwNum
+
+
+FROM BaseData 
+PIVOT( SUM(amount_net)  FOR Period IN(%s)) 
+ORDER BY 
+  parent_name
+)
+''',Period_List);
+
+
+
+SET SQL2 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE RevByMonth AS (
+SELECT 
+  T.parent_name	
+  ,A.Name AS sf_name
+  ,T.parent_id	
+  ,T.revenue_item	
+  ,T.parent_salesforce_id
+  -- ,T.salesforce_id
+  ,O.opportunity_value
+  ,T.primary_opp_name
+  ,T.primary_opp_id
+  ,T.primary_opp_close_date
+  ,EXTRACT(YEAR FROM T.primary_opp_close_date) AS CloseYear
+  ,%s
+  
+FROM Trended T 
+LEFT JOIN OppValues O ON 
+  T.parent_salesforce_id = O.parent_salesforce_id
+  AND O.revenue_item = T.revenue_item
+  AND O.CloseDate = T.primary_opp_close_date
+  AND O.RwNum = 1
+LEFT JOIN `adswerve-sfdc.Warehouse.account` A ON T.parent_salesforce_id = A.Account_Case_Safe_ID__c
+WHERE
+  T.RwNum = 1
+
+)
+''',Period_List2);
+
+
+
+SET SQL3 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE RevByYear AS 
+WITH Yearly AS (
+SELECT 
+  EXTRACT( YEAR FROM parse_date('%%b_%%Y', period)) AS Year
+  ,parent_name	
+  ,sf_name
+  ,parent_id	
+  ,revenue_item	
+  ,parent_salesforce_id
+  ,opportunity_value
+  ,primary_opp_name
+  ,primary_opp_id
+  ,primary_opp_close_date
+  ,CloseYear
+  ,SUM(amount) amount
+  
+FROM RevByMonth 
+UNPIVOT(amount FOR period IN (%s))
+GROUP BY ALL
+)
+
+SELECT
+  *
+FROM Yearly
+PIVOT( SUM(amount) FOR Year IN(%s)) 
+ORDER BY 
+  parent_name
+
+''',Period_List3,Year_List);
+
+
+
+SET SQL4 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE MediaOppRevAnalysis_Detail AS 
+SELECT 
+  M.*
+  ,%s
+FROM RevByMonth M
+LEFT JOIN RevByYear Y ON  
+  CASE
+    
+    WHEN M.primary_opp_id = Y.primary_opp_id
+         AND M.parent_name = Y.parent_name
+         AND M.revenue_item = Y.revenue_item THEN TRUE
+    ELSE FALSE
+  END
+
+''',Year_List2);
+
+SET SQL5 = FORMAT('''
+CREATE OR REPLACE TEMP TABLE MediaOppRevAnalysis_Charts AS 
+
+SELECT 
+  parent_name	
+  ,sf_name	
+  ,parent_id
+  ,revenue_item
+  ,parent_salesforce_id
+  ,opportunity_value
+  ,primary_opp_name
+  ,primary_opp_id
+  ,primary_opp_close_date
+  ,CloseYear
+  ,%s
+FROM `adswerve-finance.Fin_Reports.MediaRevenueWithOpps_DetailData`
+
+
+''',Year_List2);
+
+-------------------------------------------------------------------
+EXECUTE IMMEDIATE SQL1;
+EXECUTE IMMEDIATE SQL2;
+
+-- SELECT * FROM RevByMonth
+-- ORDER BY 
+--   parent_name
+--   ,revenue_item
+--   ,primary_opp_close_date;
+-------------------------------------------------------------------
+EXECUTE IMMEDIATE SQL3;
+
+-- SELECT * FROM RevByYear
+-- ORDER BY 
+--   parent_name
+--   ,revenue_item
+--   ,primary_opp_close_date;
+-------------------------------------------------------------------
+
+EXECUTE IMMEDIATE SQL4;
+
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_Reports.MediaRevenueWithOpps_DetailData` AS 
+SELECT * FROM MediaOppRevAnalysis_Detail
+ORDER BY 
+  parent_name
+  ,revenue_item
+  ,primary_opp_close_date;
+-------------------------------------------------------------------
+EXECUTE IMMEDIATE SQL5;
+
+CREATE OR REPLACE TABLE `adswerve-finance.Fin_Reports.MediaRevenueWithOpps_ChartData` AS 
+SELECT * FROM MediaOppRevAnalysis_Charts
+WHERE
+  opportunity_value IS NOT NULL
+  AND opportunity_value <> 0
+ORDER BY 
+  parent_name
+  ,revenue_item
+  ,primary_opp_close_date;
+

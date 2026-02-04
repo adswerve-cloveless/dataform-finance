@@ -29,6 +29,9 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Sta
     ,RevToDate STRING
     ,Total_Overages  STRING
     ,Def_Balance  STRING
+    ,SF_StartDT STRING
+    ,SF_EndDT STRING
+
     ,Fcst_Var  STRING 
     
     ,PY_Jan  STRING 
