@@ -157,6 +157,7 @@ WHERE
   -- Opportunity_Safe_ID__c IN (SELECT primary_opp_id FROM RevData_Opps)
   O.StageName = "Closed Won"
   AND IF(O.RecordTypeId = "0124M000000XA5MQAW","T","F") = "F"
+  AND O.Service__c <> "Incremental Spend" -- Added 3/13/2026
   -- AND Product_Family__c IN (
   --   "Display & Video 360"
   --   ,"Campaign Manager"
