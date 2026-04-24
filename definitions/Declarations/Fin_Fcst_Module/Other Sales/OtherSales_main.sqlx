@@ -110,6 +110,8 @@ WHERE
       OR REGEXP_CONTAINS(Account,"51171") --Amazon Incentives
       OR REGEXP_CONTAINS(Account,"51176") --Media Math Incentives
       OR REGEXP_CONTAINS(Account,"42250|42251|51180") --Amplitude
+      OR REGEXP_CONTAINS(Account,"51143") --Sovrn
+      OR REGEXP_CONTAINS(Account,"51143") --Magnite
 
 
 
@@ -154,6 +156,8 @@ WHERE
               OR REGEXP_CONTAINS(Account,"51171") --Amazon Incentives
               OR REGEXP_CONTAINS(Account,"51176") --Media Math Incentives
               OR REGEXP_CONTAINS(Account,"42250|42251|51180") --Amplitude
+              OR REGEXP_CONTAINS(Account,"51143") --Sovrn
+              OR REGEXP_CONTAINS(Account,"51143") --Magnite
            )
       )
   AND Parent_Nm <> ""
@@ -187,6 +191,8 @@ WHERE
               OR REGEXP_CONTAINS(Account,"51171") --Amazon Incentives
               OR REGEXP_CONTAINS(Account,"51176") --Media Math Incentives
               OR REGEXP_CONTAINS(Account,"42250|42251|51180") --Amplitude
+              OR REGEXP_CONTAINS(Account,"51143") --Sovrn
+              OR REGEXP_CONTAINS(Account,"51143") --Magnite
         )
       )
   AND Parent_Nm <> ""
