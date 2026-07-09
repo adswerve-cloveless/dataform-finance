@@ -12,11 +12,11 @@ DECLARE SQL1, SQL2  STRING;
 DECLARE Table_Nm1, Table_Nm2 STRING;
 
 SET Table_Nm1 = CONCAT(
-                      "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_AgyMrk_"--20240217");
+                      "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_AgyMrk_V2_"--20240217");
                       ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
 
 SET Table_Nm2 = CONCAT(
-                      "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_Parent_"--20240217");
+                      "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_Parent_V2_"--20240217");
                       ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
 
 SET SQL1 = CONCAT(
@@ -24,7 +24,7 @@ SET SQL1 = CONCAT(
               Table_Nm1,''' AS 
               SELECT 
                 *
-              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_FcstStage_AgyMrk`
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_FcstStage_AgyMrk_V2`
               WHERE
                 Period IS NOT NULL;''');
 
@@ -33,7 +33,7 @@ SET SQL2 = CONCAT(
               Table_Nm2,''' AS 
               SELECT 
                 *
-              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_FcstStage_Parent`
+              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_FcstStage_Parent_V2`
               WHERE
                 Period IS NOT NULL;''');
 
