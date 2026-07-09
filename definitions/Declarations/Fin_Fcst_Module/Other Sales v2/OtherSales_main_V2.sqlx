@@ -1,13 +1,13 @@
-CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales`(Report_Period DATE)
-BEGIN
+-- CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`(Report_Period DATE)
+-- BEGIN
 
 
--- DECLARE Report_Period DATE;
+DECLARE Report_Period DATE;
 DECLARE PY_Start, NY_END DATE;
 DECLARE TimePeriod, TimePeriod_WithDefaults, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2, SQL3 STRING;
 
 
--- SET Report_Period = (SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
+SET Report_Period = "2026-06-01"; --(SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
 SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
 SET NY_END = DATE(EXTRACT(YEAR FROM Report_Period)+1,12,1);
 
@@ -34,7 +34,7 @@ SET TimePeriod_WithDefaults = (
 ---------------------------------------------------------------------------------------------------------
 SET SQL1 = '''
 
-CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales` AS
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2` AS
 SELECT 
   PARSE_DATE("%b_%Y", O.Period_F) AS Period
   ,O.* EXCEPT (Period_F)
@@ -44,7 +44,7 @@ ORDER BY
 ''';
 ---------------------------------------------------------------------------------------------------------
 SET SQL2 = '''
-CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_Pvt` AS
+CREATE OR REPLACE TABLE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_Pvt_V2` AS
 
 WITH OS_Data AS (
 SELECT 
@@ -52,7 +52,8 @@ SELECT
   ,Parent_Nm
   ,Parent_ID
   ,Account
-  ,LineItem
+  --,LineItem  --Modified 7/9/2026
+  ,Class  --Modified 7/9/2026
   ,AgencyOrMarketer
   ,IFNULL(FcstAmt,0) AS FcstAmt
 FROM OtherSales 
@@ -72,7 +73,8 @@ SELECT
   Parent_Nm
   ,Parent_ID
   ,Account
-  ,LineItem
+  -- ,LineItem --Modified 7/9/2026
+  ,Class --Modified 7/9/2026
   ,AgencyOrMarketer
   ,''' || TimePeriod_WithDefaults || '''
 FROM PVT
@@ -115,9 +117,6 @@ WHERE
       OR REGEXP_CONTAINS(Account,"51143") --Magnite
 
 
-
-
-
   )
   AND Parent_Nm <> ""
   AND Parent_Nm IS NOT NULL
@@ -137,7 +136,8 @@ WHERE
 SELECT
   DISTINCT
   Account
-  ,MvA_LineItem AS LineItem
+  ,Class
+  --,MvA_LineItem AS LineItem
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
 WHERE
   EXTRACT(YEAR FROM Period) >= EXTRACT(YEAR FROM PY_Start)
@@ -173,7 +173,8 @@ SELECT
   ,Parent_Nm
   ,Parent_ID
   ,AgencyOrMarketer
-  ,MvA_LineItem AS LineItem
+  ,Class
+  --,MvA_LineItem AS LineItem
   ,Account
   ,SUM(Amount_Net_CY) AS Amt_Net
 FROM `adswerve-finance.FinancialReporting.BI_NR_Dashboard`
@@ -210,7 +211,8 @@ SELECT
   ,PA.Parent_Nm
   ,PA.Parent_ID
   ,PA.AgencyOrMarketer
-  ,A.LineItem
+  ,Class
+  --,A.LineItem
   ,A.Account
 FROM Periods P
 CROSS JOIN Parents PA
@@ -224,7 +226,8 @@ SELECT
   ,Account
   ,Parent_Nm
   ,Parent_ID
-  ,LineItem
+  ,Class
+  --,LineItem
   ,Amt_Net
 FROM Actuals 
 WHERE
@@ -238,19 +241,22 @@ SELECT
   ,J.Parent_Nm
   ,J.Parent_ID
   ,J.AgencyOrMarketer
-  ,J.LineItem
+  ,J.Class --Modified 7/9/2026
+  --,J.LineItem --Modified 7/9/2026
   ,J.Account
   ,IFNULL(A.Amt_Net,0) AS Amt_Net
 FROM Joiner J
 LEFT JOIN Actuals A ON J.Period = A.Period
   AND J.Parent_ID = A.Parent_ID
-  AND J.LineItem = A.LineItem
+  -- AND J.LineItem = A.LineItem
+  AND J.Class = A.Class
   AND J.Account = A.Account
 
 ORDER BY 
   J.Parent_Nm
-  ,J.LineItem
+  --,J.LineItem --Modified 7/9/2026
   ,J.Account
+  ,J.Class
   ,J.Period
 )
 
@@ -261,11 +267,12 @@ SELECT
   ,A.Parent_Nm
   ,A.Parent_ID
   ,AgencyOrMarketer
-  ,A.LineItem
+  -- ,A.LineItem --Modified 7/9/2026
+  ,Class --Modified 7/9/2026
   ,A.Account
   ,A.Amt_Net
   ,ROUND(AVG(A.Amt_Net) OVER (  
-      PARTITION BY A.Parent_ID, A.Account    ORDER BY A.Period, A.Account
+      PARTITION BY A.Parent_ID, A.Account, A.Class    ORDER BY A.Period, A.Account, A.Class
       ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
   ),2) AS Avg_3M
   -- ,ROUND(AVG(A.Amt_Net) OVER (  
@@ -290,7 +297,8 @@ SELECT
   ,C.Parent_Nm
   ,C.Parent_ID
   ,C.AgencyOrMarketer
-  ,C.LineItem
+  --,C.LineItem
+  ,C,Class
   ,C.Account
   ,IFNULL(C.Amt_Net,0) AS Amt_Net
   ,IFNULL(C.Avg_3M,0) AS Avg_3M
@@ -301,10 +309,6 @@ WHERE
 )
 
 
--- SELECT * FROM Trended
-
-
-
 SELECT
 --   A.Period
 --   ,
@@ -312,7 +316,8 @@ SELECT
   ,A.Parent_Nm
   ,A.Parent_ID
   ,A.Account
-  ,A.LineItem
+  --,A.LineItem --Modified 7/9/2026
+  ,A.Class --Modified 7/9/2026
   ,A.AgencyOrMarketer
   ,A.Amt_Net AS Net_Actual
   ,CASE
@@ -322,29 +327,31 @@ SELECT
    END AS FcstAmt
 FROM Agg A
 LEFT JOIN Trended T ON A.Parent_ID = T.Parent_ID
-  AND A.LineItem = T.LineItem
+  -- AND A.LineItem = T.LineItem --Modified 7/9/2026
+  AND A.Class = T.Class --Modified 7/9/2026
   AND A.Account = T.Account
 -----------------------------------
---Modified 7/15/2025
-LEFT JOIN LastMonth L ON A.Parent_ID = L.Parent_ID
-  AND A.LineItem = L.LineItem
+--Modified 7/15/2025, 7/9/2026
+LEFT JOIN LastMonth L ON 
+  A.Parent_ID = L.Parent_ID
+  -- AND A.LineItem = L.LineItem --Modified 7/9/2026
+  AND A.Class = L.Class --Modified 7/9/2026
   AND A.Account = L.Account
 
 -----------------------------------
-
-
 GROUP BY ALL
 HAVING SUM(FcstAmt) <>0
 ORDER BY 
   A.Parent_Nm
   ,A.Account
-  ,A.LineItem
+  -- ,A.LineItem
+  ,A.Class
   ,A.Period_F
 ;
 
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
+SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`
 
-
-END;
+-- END;
