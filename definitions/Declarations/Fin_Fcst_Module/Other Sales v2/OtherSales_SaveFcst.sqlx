@@ -15,9 +15,7 @@ SET Table_Nm1 = CONCAT(
                       "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_AgyMrk_V2_"--20240217");
                       ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
 
-SET Table_Nm2 = CONCAT(
-                      "adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_SavedFcst_Parent_V2_"--20240217");
-                      ,FORMAT_TIMESTAMP("%Y%m%d",CURRENT_TIMESTAMP()));
+
 
 SET SQL1 = CONCAT(
               "CREATE OR REPLACE TABLE ",
@@ -28,16 +26,7 @@ SET SQL1 = CONCAT(
               WHERE
                 Period IS NOT NULL;''');
 
-SET SQL2 = CONCAT(
-              "CREATE OR REPLACE TABLE ",
-              Table_Nm2,''' AS 
-              SELECT 
-                *
-              FROM  `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_FcstStage_Parent_V2`
-              WHERE
-                Period IS NOT NULL;''');
 
 EXECUTE IMMEDIATE SQL1;
-EXECUTE IMMEDIATE SQL2;
 
 END;

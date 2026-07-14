@@ -1,13 +1,13 @@
--- CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`(Report_Period DATE)
--- BEGIN
+CREATE OR REPLACE PROCEDURE `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`(Report_Period DATE)
+BEGIN
 
 
-DECLARE Report_Period DATE;
+-- DECLARE Report_Period DATE;
 DECLARE PY_Start, NY_END DATE;
 DECLARE TimePeriod, TimePeriod_WithDefaults, ThreeMonthTrail, SixMonthTrail, SQL1, SQL2, SQL3 STRING;
 
 
-SET Report_Period = "2026-06-01"; --(SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
+-- SET Report_Period = "2026-06-01"; --(SELECT `adswerve-finance.Fin_Routines.Fx_MaxRptPeriod`());
 SET PY_Start = DATE(EXTRACT(YEAR FROM Report_Period)-1,1,1);
 SET NY_END = DATE(EXTRACT(YEAR FROM Report_Period)+1,12,1);
 
@@ -352,6 +352,6 @@ ORDER BY
 
 EXECUTE IMMEDIATE SQL1;
 EXECUTE IMMEDIATE SQL2;
-SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`
+-- SELECT * FROM `adswerve-finance-reporting.Fin_Fcst_Module.OtherSales_V2`
 
--- END;
+END;

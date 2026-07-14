@@ -10,7 +10,8 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Oth
 (
     Scenario STRING
     ,Period DATE
-    ,Account STRING
+    ,Acct_Nm STRING
+    ,Class STRING
     ,AgyMrk STRING
     ,Amount FLOAT64
     
@@ -20,7 +21,7 @@ CREATE OR REPLACE EXTERNAL TABLE `adswerve-finance-reporting.Fin_Fcst_Module.Oth
 OPTIONS (
   format = 'GOOGLE_SHEETS'
   ,uris =  ['https://docs.google.com/spreadsheets/d/1aMeaYI4FvGC8bS0gCAu7V032caeGEqpWC4fS0C3fNS4'] --Update as needed
-  ,sheet_range = 'Fcst Upload!E4:I'  --Sheet Name
+  ,sheet_range = 'Summary and Upload!E4:J'  --Sheet Name
   ,skip_leading_rows = 0
   --,header = 0
 )
