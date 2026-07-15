@@ -626,6 +626,9 @@ SELECT
     WHEN IN_SF_NotInNS = "F" THEN
       CASE 
         -- WHEN Class = "" OR Class IS NULL THEN "Unknown"
+        WHEN REGEXP_CONTAINS(Class,"Meridian") THEN "Product : Meridian" /*TS Services*/ -- 7/14/2026
+        WHEN REGEXP_CONTAINS(Class,"Amplitude") THEN "Product : Amplitude" /*TS Services*/ -- 7/14/2026
+ 
         WHEN REGEXP_CONTAINS(Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
         WHEN REGEXP_CONTAINS(Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
         WHEN REGEXP_CONTAINS(Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
@@ -731,6 +734,9 @@ SELECT
 
 ,IF(A.Class IS NOT NULL, 
     CASE 
+      WHEN REGEXP_CONTAINS(A.Class,"Meridian") THEN "Product : Meridian" /*TS Services*/ -- 7/14/2026
+      WHEN REGEXP_CONTAINS(A.Class,"Amplitude") THEN "Product : Amplitude" /*TS Services*/ -- 7/14/2026
+
       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : GCP") THEN "Product : Analytics : GCP" /*TS Services*/
       WHEN REGEXP_CONTAINS(A.Class,"Product : Analytics : Looker") THEN "Product : Analytics : GCP" /*TS Services*/
       WHEN REGEXP_CONTAINS(A.Class,"Adobe") THEN "Product : Analytics : Adobe" /*Adobe*/
